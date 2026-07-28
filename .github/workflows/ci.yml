@@ -13,7 +13,7 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Validate installation package
         shell: powershell
         run: .\install.ps1 -ValidateOnly
@@ -27,6 +27,6 @@ jobs:
   shell:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Check Bash wrapper
         run: shellcheck inkbeam whiteboard
