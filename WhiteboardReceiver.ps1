@@ -477,8 +477,10 @@ function Invoke-Doctor {
     $activeProfiles = @(
         Get-NetConnectionProfile -ErrorAction SilentlyContinue |
             Where-Object {
-                $_.IPv4Connectivity -ne 'NoTraffic' -or
-                $_.IPv6Connectivity -ne 'NoTraffic'
+                $_.InterfaceAlias -notlike 'vEthernet*' -and
+                $_.InterfaceAlias -notmatch '^wt\d+$' -and
+                ($_.IPv4Connectivity -ne 'NoTraffic' -or
+                    $_.IPv6Connectivity -ne 'NoTraffic')
             }
     )
     $trustedProfiles = @(
