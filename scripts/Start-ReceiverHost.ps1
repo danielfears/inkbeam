@@ -88,7 +88,7 @@ namespace IpadWhiteboard
 
             monitorThread = new Thread(MonitorConsole);
             monitorThread.IsBackground = true;
-            monitorThread.Name = "iPad Whiteboard PIN monitor";
+            monitorThread.Name = "InkBeam PIN monitor";
             monitorThread.Start();
 
             receiver.WaitForExit();
@@ -115,7 +115,7 @@ namespace IpadWhiteboard
         {
             pipeThread = new Thread(PipeLoop);
             pipeThread.IsBackground = true;
-            pipeThread.Name = "iPad Whiteboard PIN pipe";
+            pipeThread.Name = "InkBeam PIN pipe";
             pipeThread.Start();
         }
 

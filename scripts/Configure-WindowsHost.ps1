@@ -34,7 +34,16 @@ if ($service.Status -ne 'Running') {
     Start-Service -Name 'Bonjour Service'
 }
 
-$ruleGroup = 'iPad Whiteboard Receiver'
+$ruleGroup = 'InkBeam'
+Get-NetFirewallRule -Name @(
+    'iPadWhiteboardReceiver-TCP',
+    'iPadWhiteboardReceiver-UDP',
+    'iPadWhiteboardReceiver-mDNS'
+) -ErrorAction SilentlyContinue |
+    Remove-NetFirewallRule
+Get-NetFirewallRule -Group 'iPad Whiteboard Receiver' `
+    -ErrorAction SilentlyContinue |
+    Remove-NetFirewallRule
 Get-NetFirewallRule -Group $ruleGroup -ErrorAction SilentlyContinue |
     Remove-NetFirewallRule
 
@@ -49,21 +58,21 @@ $commonParameters = @{
 
 New-NetFirewallRule @commonParameters `
     -Name 'iPadWhiteboardReceiver-TCP' `
-    -DisplayName 'iPad Whiteboard Receiver (TCP)' `
+    -DisplayName 'InkBeam (TCP)' `
     -Program $ReceiverExecutable `
     -Protocol TCP `
     -LocalPort '7100-7102' | Out-Null
 
 New-NetFirewallRule @commonParameters `
     -Name 'iPadWhiteboardReceiver-UDP' `
-    -DisplayName 'iPad Whiteboard Receiver (UDP)' `
+    -DisplayName 'InkBeam (UDP)' `
     -Program $ReceiverExecutable `
     -Protocol UDP `
     -LocalPort '7100-7102' | Out-Null
 
 New-NetFirewallRule @commonParameters `
     -Name 'iPadWhiteboardReceiver-mDNS' `
-    -DisplayName 'iPad Whiteboard Receiver (mDNS)' `
+    -DisplayName 'InkBeam (mDNS)' `
     -Program $MdnsExecutable `
     -Protocol UDP `
     -LocalPort 5353 | Out-Null

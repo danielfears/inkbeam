@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate package
+        shell: powershell
+        run: |
+          .\install.ps1 -ValidateOnly
+          .\tests\WhiteboardReceiver.Tests.ps1
+
+      - name: Build release ZIP
+        shell: powershell
+        run: |
+          $version = (Get-Content .\VERSION -Raw).Trim()
+          if ("v$version" -ne "${{ github.ref_name }}") {
+            throw "VERSION $version does not match tag ${{ github.ref_name }}."
+          }
+          .\scripts\Build-Release.ps1 -OutputDirectory $PWD
+
+      - name: Publish GitHub release
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content .\VERSION -Raw).Trim()
+          $name = "InkBeam-v$version"
+          gh release create "${{ github.ref_name }}" `
+            "$name.zip" `
+            "$name.zip.sha256" `
+            --title "InkBeam v$version" `
+            --generate-notes

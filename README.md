@@ -1,4 +1,8 @@
-# iPad Whiteboard Receiver
+# InkBeam
+
+[![CI](https://github.com/danielfears/inkbeam/actions/workflows/ci.yml/badge.svg)](https://github.com/danielfears/inkbeam/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/danielfears/inkbeam)](https://github.com/danielfears/inkbeam/releases/latest)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
 A local-only AirPlay screen-mirroring receiver for using an iPad as a
 whiteboard in Teams, Zoom, or another screen-sharing application. It requires
@@ -9,17 +13,25 @@ The project wraps the open-source
 setup. It deliberately uses a native Windows runtime rather than WSL so that
 Bonjour multicast discovery works reliably on the laptop's real network.
 
-## Install
+## Install on Windows
 
-From WSL:
+1. Download
+   **[InkBeam](https://github.com/danielfears/inkbeam/releases/latest)**
+   from the latest GitHub release.
+2. Extract the ZIP.
+3. Double-click **`Install.cmd`**.
+4. Approve the single administrator prompt used to install local discovery
+   and scoped firewall rules.
 
-```bash
-cd ~/git/ipad-whiteboard-receiver
-./whiteboard install
-```
+No WSL, developer tools, account, or package manager is required. The first
+installation downloads about 115 MB of open-source runtime files from GitHub.
+Windows 10/11 x64 is supported; Windows 11 ARM64 uses built-in x64 emulation.
 
 The installer:
 
+- validates its own package before changing the machine;
+- copies an updateable application snapshot into
+  `%LOCALAPPDATA%\iPadWhiteboardReceiver\app`;
 - downloads the pinned `uxplay-windows` 2.0.0.1736 x64 bundle from GitHub;
 - verifies its published SHA-256 checksum before extracting anything;
 - checks the expected application, codec, and renderer files in the bundle;
@@ -27,19 +39,21 @@ The installer:
   service and tightly scoped firewall rules;
 - allows the receiver on all Windows network profiles, but only for its fixed
   ports, executable paths, and the directly connected local subnet;
-- creates an **iPad Whiteboard Receiver** Start menu shortcut; and
-- starts the receiver in the Windows notification area.
+- creates an **InkBeam Receiver** Start menu shortcut; and
+- installs the desktop widget and starts it automatically at sign-in.
 
-The laptop is Windows on ARM. The tested x64 bundle is used through Windows'
-built-in x64 emulation because the upstream ARM64 release is explicitly marked
-untested.
+Re-running `Install.cmd` upgrades the application in place and preserves the
+receiver identity, settings, and trusted-client register.
+
+To remove it, use **Uninstall InkBeam** from the Start menu or
+double-click `Uninstall.cmd` in the extracted release.
 
 ## Use
 
 1. Ensure the iPad and laptop are on the same trusted Wi-Fi network.
 2. On the iPad, open **Control Centre → Screen Mirroring**.
-3. Select **iPad-Whiteboard**.
-4. Enter the fresh PIN shown directly on the **iPad Whiteboard** widget.
+3. Select **InkBeam**.
+4. Enter the fresh PIN shown directly on the **InkBeam** widget.
 5. In Teams or Zoom, share the **AirPlay Video Stream** window.
 
 The stream window remains available between brief disconnects, but clears the
@@ -54,47 +68,50 @@ The PIN is not stored on disk or written to a log.
 
 ## Commands
 
-```bash
-./whiteboard start
-./whiteboard stop
-./whiteboard restart
-./whiteboard status
-./whiteboard doctor
+From Windows PowerShell:
+
+```powershell
+$controller = "$env:LOCALAPPDATA\iPadWhiteboardReceiver\app\WhiteboardReceiver.ps1"
+& $controller start
+& $controller stop
+& $controller restart
+& $controller status
+& $controller doctor
 ```
 
 ## Desktop widget
 
-The matching **iPad Whiteboard** Windows widget is installed on the desktop
-and starts at sign-in. It sits directly below the Azure Context widget and
-provides:
+The **InkBeam** Windows widget is installed on the desktop and starts
+at sign-in. It sits at the top-right, or directly below an existing Azure
+Context widget when one is present. It provides:
 
 - an **Enable/Disable** button for the receiver;
 - grey **Disabled**, green **Ready to cast**, and blue **Casting now** states;
 - setup, discovery, or network warnings instead of a false ready state; and
 - the current AirPlay name and the active four-digit PIN when requested.
 
-Its recoverable source and installer are tracked in
-`~/git/dotfiles/windows/ipad-whiteboard-widget/`.
+The widget is the primary control and information view; no terminal is needed.
 
 Change the visible name or presentation settings:
 
-```bash
-./whiteboard configure -ReceiverName "Workshop-Whiteboard"
-./whiteboard configure -Fullscreen on
-./whiteboard configure -Audio on
+```powershell
+$controller = "$env:LOCALAPPDATA\iPadWhiteboardReceiver\app\WhiteboardReceiver.ps1"
+& $controller configure -ReceiverName "Workshop-Whiteboard"
+& $controller configure -Fullscreen on
+& $controller configure -Audio on
 ```
 
 Authentication modes:
 
-```bash
+```powershell
 # Recommended: a fresh random PIN for every connection
-./whiteboard configure -Authentication every-connection
+& $controller configure -Authentication every-connection
 
 # Trust an iPad after its first PIN pairing
-./whiteboard configure -Authentication pair-once
+& $controller configure -Authentication pair-once
 
 # No authentication; not recommended
-./whiteboard configure -Authentication open
+& $controller configure -Authentication open
 ```
 
 Configuration and generated pairing material stay under
@@ -116,9 +133,10 @@ file is stored at `%APPDATA%\leapbtw\uxplay-windows\arguments.txt`.
   changing Wi-Fi does not require an adapter-specific setup.
 - The receiver accepts one active client at a time.
 
-On a Public network, `./whiteboard doctor` warns that nearby devices on the
-same subnet can reach the receiver. The fresh per-connection PIN remains
-mandatory; disable the receiver from the widget when it is not needed.
+On a Public network, the controller's `doctor` command warns that nearby
+devices on the same subnet can reach the receiver. The fresh per-connection
+PIN remains mandatory; disable the receiver from the widget when it is not
+needed.
 
 ## What AirServer is and why this design differs
 
@@ -176,3 +194,24 @@ Research checked on 28/07/2026:
   peer-to-peer discovery even when both devices have Internet access.
 - AirPlay is undocumented and Apple may change compatibility in a future
   iPadOS release.
+
+## Development
+
+Clone the repository and validate it without installing:
+
+```powershell
+git clone https://github.com/danielfears/inkbeam.git
+cd inkbeam
+.\install.ps1 -ValidateOnly
+.\tests\WhiteboardReceiver.Tests.ps1
+```
+
+WSL users can also use the `./inkbeam` convenience wrapper. Tagged releases
+are assembled and published by GitHub Actions.
+
+See [CHANGELOG.md](CHANGELOG.md) for release history.
+
+## Licence
+
+GPL-3.0-or-later. See [LICENSE](LICENSE) and
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

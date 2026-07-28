@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate installation package
+        shell: powershell
+        run: .\install.ps1 -ValidateOnly
+      - name: Run PowerShell tests
+        shell: powershell
+        run: .\tests\WhiteboardReceiver.Tests.ps1
+      - name: Build release package
+        shell: powershell
+        run: .\scripts\Build-Release.ps1
+
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Bash wrapper
+        run: shellcheck inkbeam whiteboard

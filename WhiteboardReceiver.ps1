@@ -66,7 +66,7 @@ function Get-RuntimeMetadata {
 
 function Get-DefaultConfiguration {
     [pscustomobject][ordered]@{
-        receiverName = 'iPad-Whiteboard'
+        receiverName = 'InkBeam'
         authentication = 'every-connection'
         audioEnabled = $false
         renderer = 'd3d11'
@@ -365,9 +365,34 @@ function Install-WindowsHostConfiguration {
     }
 }
 
+function Test-WindowsHostConfiguration {
+    $service = Get-Service -Name 'Bonjour Service' -ErrorAction SilentlyContinue
+    if ($null -eq $service -or $service.Status -ne 'Running') {
+        return $false
+    }
+
+    foreach ($ruleName in $Script:FirewallRuleNames) {
+        $rule = Get-NetFirewallRule -Name $ruleName -ErrorAction SilentlyContinue
+        if ($null -eq $rule -or $rule.Enabled -ne 'True' -or
+            $rule.Action -ne 'Allow' -or $rule.Direction -ne 'Inbound' -or
+            [string]$rule.Group -ne 'InkBeam') {
+            return $false
+        }
+        $profiles = [string]$rule.Profile
+        if (@('Domain', 'Private', 'Public') |
+            Where-Object { $profiles -notmatch [regex]::Escape($_) }) {
+            return $false
+        }
+    }
+    return $true
+}
+
 function Install-StartMenuShortcut {
     $programs = [Environment]::GetFolderPath('Programs')
-    $shortcutPath = Join-Path $programs 'iPad Whiteboard Receiver.lnk'
+    $shortcutPath = Join-Path $programs 'InkBeam Receiver.lnk'
+    Remove-Item -LiteralPath (
+        Join-Path $programs 'iPad Whiteboard Receiver.lnk'
+    ) -Force -ErrorAction SilentlyContinue
     $shell = New-Object -ComObject WScript.Shell
     $shortcut = $shell.CreateShortcut($shortcutPath)
     $shortcut.TargetPath = $Script:WindowsPowerShellPath
@@ -386,7 +411,7 @@ function Install-StartMenuShortcut {
     ) -join ' '
     $shortcut.WorkingDirectory = $Script:RuntimeRoot
     $shortcut.IconLocation = "$($Script:ExecutablePath),0"
-    $shortcut.Description = 'Receive a local iPad AirPlay screen-mirroring session'
+    $shortcut.Description = 'Receive a local iPad screen-mirroring session with InkBeam'
     $shortcut.Save()
 }
 
@@ -415,15 +440,15 @@ function Get-ReceiverProcesses {
 
 function Start-Receiver {
     if (-not (Test-Path -LiteralPath $Script:ExecutablePath -PathType Leaf)) {
-        throw 'The receiver is not installed. Run: ./whiteboard install'
+        throw 'The receiver is not installed. Run Install.cmd again.'
     }
     if (-not (Test-Path -LiteralPath $Script:LauncherPath -PathType Leaf)) {
-        throw 'The visible PIN launcher is not installed. Run: ./whiteboard install'
+        throw 'The PIN host is not installed. Run Install.cmd again.'
     }
 
     $running = @(Get-ReceiverProcesses)
     if ($running.Count -gt 0) {
-        Write-Host 'iPad Whiteboard Receiver is already running.'
+        Write-Host 'InkBeam is already running.'
         return
     }
 
@@ -452,7 +477,7 @@ function Start-Receiver {
         }
     }
     if (@(Get-ReceiverProcesses).Count -eq 0) {
-        throw 'The receiver exited before it became ready. Run ./whiteboard doctor for details.'
+        throw 'The receiver exited before it became ready. Run the controller doctor command for details.'
     }
 
     Write-Host "Ready: choose '$($configuration.receiverName)' from the iPad Screen Mirroring menu."
@@ -461,7 +486,7 @@ function Start-Receiver {
 function Stop-Receiver {
     $running = @(Get-ReceiverProcesses)
     if ($running.Count -eq 0) {
-        Write-Host 'iPad Whiteboard Receiver is already stopped.'
+        Write-Host 'InkBeam is already stopped.'
         return
     }
 
@@ -473,7 +498,7 @@ function Stop-Receiver {
     if (@(Get-ReceiverProcesses).Count -gt 0) {
         throw 'The receiver did not stop cleanly.'
     }
-    Write-Host 'iPad Whiteboard Receiver stopped.'
+    Write-Host 'InkBeam stopped.'
 }
 
 function Show-Status {
@@ -514,7 +539,7 @@ function Invoke-Doctor {
     }
     else {
         $failures++
-        Write-DoctorCheck -Result FAIL -Message 'Runtime is missing; run ./whiteboard install.'
+        Write-DoctorCheck -Result FAIL -Message 'Runtime is missing; run Install.cmd again.'
     }
 
     $service = Get-Service -Name 'Bonjour Service' -ErrorAction SilentlyContinue
@@ -523,7 +548,7 @@ function Invoke-Doctor {
     }
     else {
         $failures++
-        Write-DoctorCheck -Result FAIL -Message 'Local Bonjour discovery is not running; run ./whiteboard install.'
+        Write-DoctorCheck -Result FAIL -Message 'Local Bonjour discovery is not running; run Install.cmd again.'
     }
 
     $missingRules = @(
@@ -578,7 +603,7 @@ function Invoke-Doctor {
         Write-DoctorCheck -Result PASS -Message 'Receiver process is running.'
     }
     else {
-        Write-DoctorCheck -Result WARN -Message 'Receiver process is stopped; run ./whiteboard start.'
+        Write-DoctorCheck -Result WARN -Message 'Receiver process is stopped; enable it in the InkBeam widget.'
     }
 
     if ($failures -gt 0) {
@@ -622,14 +647,14 @@ function Update-Configuration {
 
 function Show-Help {
     @'
-Usage:
-  ./whiteboard install
-  ./whiteboard start|stop|restart|status|doctor
-  ./whiteboard configure [-ReceiverName <name>]
-                         [-Authentication every-connection|pair-once|open]
-                         [-Audio on|off]
-                         [-Renderer auto|d3d11|d3d12]
-                         [-Fullscreen on|off]
+Windows PowerShell:
+  $controller = "$env:LOCALAPPDATA\iPadWhiteboardReceiver\app\WhiteboardReceiver.ps1"
+  & $controller start|stop|restart|status|doctor
+  & $controller configure [-ReceiverName <name>]
+                          [-Authentication every-connection|pair-once|open]
+                          [-Audio on|off]
+                          [-Renderer auto|d3d11|d3d12]
+                          [-Fullscreen on|off]
 
 The secure defaults require a fresh PIN for every connection, disable audio
 and Bluetooth discovery, and allow inbound traffic only from the local subnet.
@@ -643,12 +668,20 @@ function Invoke-Main {
                 Install-Runtime
                 Install-ReceiverLauncher
                 $configuration = Get-Configuration
+                if ($configuration.receiverName -eq 'iPad-Whiteboard') {
+                    $configuration.receiverName = 'InkBeam'
+                }
                 Save-Configuration -Configuration $configuration
                 Write-UxPlayConfiguration -Configuration $configuration
-                Install-WindowsHostConfiguration
+                if (-not (Test-WindowsHostConfiguration)) {
+                    Install-WindowsHostConfiguration
+                }
                 Install-StartMenuShortcut
+                if (@(Get-ReceiverProcesses).Count -gt 0) {
+                    Stop-Receiver
+                }
                 Start-Receiver
-                Write-Host 'Installation complete. A Start menu shortcut has also been created.'
+                Write-Host 'InkBeam installation is complete.'
                 return 0
             }
             'start' {

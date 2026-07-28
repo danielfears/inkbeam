@@ -49,6 +49,9 @@ foreach ($target in $parseTargets) {
 Assert-True `
     -Condition ($null -ne (Get-Command Install-ReceiverLauncher -ErrorAction SilentlyContinue)) `
     -Message 'Receiver launcher installer is available at script scope'
+Assert-True `
+    -Condition ($null -ne (Get-Command Test-WindowsHostConfiguration -ErrorAction SilentlyContinue)) `
+    -Message 'Windows host configuration check is available at script scope'
 $encodingTestPath = Join-Path $env:TEMP `
     "iPadWhiteboardEncoding-$([guid]::NewGuid().ToString('N')).txt"
 try {
@@ -74,6 +77,7 @@ Assert-Matches `
     -Message 'Receiver host decodes a pinned UxPlay glyph fixture'
 
 $configuration = Get-DefaultConfiguration
+Assert-True -Condition ($configuration.receiverName -eq 'InkBeam') -Message 'Default AirPlay name uses InkBeam branding'
 Assert-True -Condition ($configuration.authentication -eq 'every-connection') -Message 'Default authentication requires every-connection approval'
 Assert-True -Condition (-not $configuration.audioEnabled) -Message 'Audio is disabled by default'
 

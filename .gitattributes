@@ -1,0 +1,7 @@
+* text=auto
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.vbs text eol=crlf
+*.sh text eol=lf
+whiteboard text eol=lf
+inkbeam text eol=lf
