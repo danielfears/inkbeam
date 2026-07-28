@@ -25,8 +25,8 @@ The installer:
 - checks the expected application, codec, and renderer files in the bundle;
 - requests one Windows administrator approval to install the local Bonjour
   service and tightly scoped firewall rules;
-- allows inbound traffic only from the local subnet on Private or Domain
-  network profiles;
+- allows the receiver on all Windows network profiles, but only for its fixed
+  ports, executable paths, and the directly connected local subnet;
 - creates an **iPad Whiteboard Receiver** Start menu shortcut; and
 - starts the receiver in the Windows notification area.
 
@@ -106,12 +106,13 @@ file is stored at `%APPDATA%\leapbtw\uxplay-windows\arguments.txt`.
 - No recording flags are enabled.
 - AirPlay data ports are fixed to TCP/UDP `7100-7102`.
 - Windows Firewall permits those ports and mDNS `5353/UDP` only from
-  `LocalSubnet` on Private or Domain profiles.
+  `LocalSubnet`. The rules apply on Domain, Private, and Public profiles so
+  changing Wi-Fi does not require an adapter-specific setup.
 - The receiver accepts one active client at a time.
 
-If `./whiteboard doctor` reports that the current network is Public, change it
-to Private only when it is a network you trust. Public networks are
-intentionally blocked.
+On a Public network, `./whiteboard doctor` warns that nearby devices on the
+same subnet can reach the receiver. The fresh per-connection PIN remains
+mandatory; disable the receiver from the widget when it is not needed.
 
 ## What AirServer is and why this design differs
 
@@ -121,6 +122,13 @@ like a receiving display for AirPlay, Google Cast, and Miracast. Its vendor
 states that receiver sessions remain local rather than being transmitted over
 the Internet, but it does not publish the receiver implementation or a
 wire-level technical specification.
+
+AirServer does not bind itself to a named network adapter. Its Windows app
+package installs inbound and outbound firewall capabilities for Domain,
+Private, and Public profiles, and its support guidance explicitly enables both
+Private and Public. This receiver now follows that profile-independent model
+with narrower rules: only the UxPlay and mDNS executables, fixed ports, and
+`LocalSubnet` are allowed, with a fresh PIN required for every connection.
 
 AirPlay mirroring is not simply a web video stream. It combines:
 
@@ -145,6 +153,8 @@ Research checked on 28/07/2026:
 - [AirServer for Windows](https://www.airserver.com/WindowsDesktop)
 - [AirServer Connect 3 privacy statement](https://www.airserver.com/connect-3)
 - [AirServer privacy policy](https://www.airserver.com/privacy)
+- [AirServer Windows firewall guidance](https://support.airserver.com/support/solutions/articles/43000533861-how-can-i-add-an-exception-to-windows-security-for-airserver-windows-desktop-edition-firewall-confi)
+- [AirServer Windows ports and Bonjour services](https://support.airserver.com/support/solutions/articles/43000534713-what-ports-bonjour-services-are-used-by-airserver-windows-desktop-edition-)
 - [Apple: stream video or mirror an iPad screen with AirPlay](https://support.apple.com/guide/ipad/stream-video-or-mirror-the-screen-ipadf27a8cb7/ipados)
 - [Unofficial AirPlay service discovery specification](https://github.com/openairplay/airplay-spec/blob/master/src/service_discovery.md)
 - [Unofficial AirPlay screen-mirroring transport](https://github.com/openairplay/airplay-spec/tree/master/src/screen_mirroring)

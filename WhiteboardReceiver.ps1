@@ -318,7 +318,7 @@ function Install-WindowsHostConfiguration {
         (ConvertTo-NativeQuotedArgument -Value $Script:MdnsExecutablePath)
     )
 
-    Write-Host 'Windows will request administrator approval once for local discovery and private-LAN firewall rules.'
+    Write-Host 'Windows will request administrator approval once for local discovery and local-subnet firewall rules.'
     $process = Start-Process `
         -FilePath 'powershell.exe' `
         -ArgumentList $arguments `
@@ -467,7 +467,7 @@ function Invoke-Doctor {
         }
     )
     if ($missingRules.Count -eq 0) {
-        Write-DoctorCheck -Result PASS -Message 'Private/domain LAN firewall rules are installed.'
+        Write-DoctorCheck -Result PASS -Message 'Local-subnet firewall rules are installed.'
     }
     else {
         $failures++
@@ -483,16 +483,16 @@ function Invoke-Doctor {
                     $_.IPv6Connectivity -ne 'NoTraffic')
             }
     )
-    $trustedProfiles = @(
-        $activeProfiles |
-            Where-Object { $_.NetworkCategory -in @('Private', 'DomainAuthenticated') }
-    )
-    if ($trustedProfiles.Count -gt 0) {
-        Write-DoctorCheck -Result PASS -Message 'An active private/domain network can receive local AirPlay traffic.'
-    }
-    elseif ($activeProfiles.Count -gt 0) {
-        $failures++
-        Write-DoctorCheck -Result FAIL -Message 'The active network is Public. Mark only a trusted Wi-Fi network as Private before casting.'
+    if ($activeProfiles.Count -gt 0) {
+        if (@(
+                $activeProfiles |
+                    Where-Object { $_.NetworkCategory -eq 'Public' }
+            ).Count -gt 0) {
+            Write-DoctorCheck -Result WARN -Message 'The active network is Public; access remains PIN-gated and limited to its local subnet.'
+        }
+        else {
+            Write-DoctorCheck -Result PASS -Message 'An active network can receive local AirPlay traffic.'
+        }
     }
     else {
         $failures++
@@ -565,8 +565,7 @@ Usage:
                          [-Fullscreen on|off]
 
 The secure defaults require a fresh PIN for every connection, disable audio
-and Bluetooth discovery, and allow inbound traffic only from the local subnet
-on Windows Private or Domain network profiles.
+and Bluetooth discovery, and allow inbound traffic only from the local subnet.
 '@ | Write-Host
 }
 

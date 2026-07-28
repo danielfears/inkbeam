@@ -43,7 +43,7 @@ $commonParameters = @{
     Direction = 'Inbound'
     Action = 'Allow'
     Enabled = 'True'
-    Profile = @('Private', 'Domain')
+    Profile = @('Private', 'Domain', 'Public')
     RemoteAddress = 'LocalSubnet'
 }
 
@@ -69,4 +69,3 @@ New-NetFirewallRule @commonParameters `
     -LocalPort 5353 | Out-Null
 
 Write-Host 'Local discovery service and private/domain LAN firewall rules are ready.'
-
