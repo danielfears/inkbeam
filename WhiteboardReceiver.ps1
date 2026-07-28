@@ -31,8 +31,10 @@ $Script:RuntimeRoot = Join-Path $Script:DataRoot "runtime\$($Script:RuntimeVersi
 $Script:ExecutablePath = Join-Path $Script:RuntimeRoot 'uxplay-windows.exe'
 $Script:MdnsExecutablePath = Join-Path $Script:RuntimeRoot 'mDNSResponder.exe'
 $Script:RuntimeManifestPath = Join-Path $Script:DataRoot 'runtime-current.json'
+$Script:LauncherPath = Join-Path $Script:DataRoot 'Start-ReceiverHost.ps1'
 $Script:ConfigurationPath = Join-Path $Script:DataRoot 'config.json'
 $Script:ArgumentsPath = Join-Path $env:APPDATA 'leapbtw\uxplay-windows\arguments.txt'
+$Script:WindowsPowerShellPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $Script:RequiredRuntimeFiles = @(
     'uxplay-windows.exe',
     'mDNSResponder.exe',
@@ -172,12 +174,26 @@ function ConvertTo-UxPlayArguments {
     return $parts -join ' '
 }
 
+function Write-Utf8NoBomFile {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$Content
+    )
+
+    [IO.File]::WriteAllText(
+        $Path,
+        $Content,
+        [Text.UTF8Encoding]::new($false)
+    )
+}
+
 function Write-UxPlayConfiguration {
     param([Parameter(Mandatory)][psobject]$Configuration)
 
     New-Item -ItemType Directory -Path (Split-Path -Parent $Script:ArgumentsPath) -Force | Out-Null
-    ConvertTo-UxPlayArguments -Configuration $Configuration |
-        Set-Content -LiteralPath $Script:ArgumentsPath -Encoding UTF8
+    Write-Utf8NoBomFile `
+        -Path $Script:ArgumentsPath `
+        -Content (ConvertTo-UxPlayArguments -Configuration $Configuration)
 
     $settingsPath = 'HKCU:\Software\leapbtw\uxplay-windows'
     New-Item -Path $settingsPath -Force | Out-Null
@@ -212,6 +228,7 @@ function Write-RuntimeManifest {
         architecture = 'x64'
         executable = $Script:ExecutablePath
         mdnsExecutable = $Script:MdnsExecutablePath
+        launcher = $Script:LauncherPath
         tcpPorts = @(7100, 7101, 7102)
     } |
         ConvertTo-Json |
@@ -294,6 +311,21 @@ function Install-Runtime {
     }
 }
 
+function Install-ReceiverLauncher {
+    $source = Join-Path $PSScriptRoot 'scripts\Start-ReceiverHost.ps1'
+    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+        throw "Missing receiver launcher: $source"
+    }
+
+    New-Item -ItemType Directory -Path $Script:DataRoot -Force | Out-Null
+    Copy-Item -LiteralPath $source -Destination $Script:LauncherPath -Force
+    $legacyLauncher = Join-Path $Script:DataRoot 'Start-ReceiverWithConsole.ps1'
+    if (Test-Path -LiteralPath $legacyLauncher -PathType Leaf) {
+        Remove-Item -LiteralPath $legacyLauncher -Force
+    }
+    Write-RuntimeManifest
+}
+
 function ConvertTo-NativeQuotedArgument {
     param([Parameter(Mandatory)][string]$Value)
 
@@ -308,6 +340,8 @@ function Install-WindowsHostConfiguration {
 
     $arguments = @(
         '-NoProfile'
+        '-WindowStyle'
+        'Hidden'
         '-ExecutionPolicy'
         'Bypass'
         '-File'
@@ -320,7 +354,7 @@ function Install-WindowsHostConfiguration {
 
     Write-Host 'Windows will request administrator approval once for local discovery and local-subnet firewall rules.'
     $process = Start-Process `
-        -FilePath 'powershell.exe' `
+        -FilePath $Script:WindowsPowerShellPath `
         -ArgumentList $arguments `
         -Verb RunAs `
         -PassThru `
@@ -336,7 +370,20 @@ function Install-StartMenuShortcut {
     $shortcutPath = Join-Path $programs 'iPad Whiteboard Receiver.lnk'
     $shell = New-Object -ComObject WScript.Shell
     $shortcut = $shell.CreateShortcut($shortcutPath)
-    $shortcut.TargetPath = $Script:ExecutablePath
+    $shortcut.TargetPath = $Script:WindowsPowerShellPath
+    $shortcut.Arguments = @(
+        '-NoProfile'
+        '-WindowStyle'
+        'Hidden'
+        '-ExecutionPolicy'
+        'Bypass'
+        '-File'
+        (ConvertTo-NativeQuotedArgument -Value $Script:LauncherPath)
+        '-ReceiverExecutable'
+        (ConvertTo-NativeQuotedArgument -Value $Script:ExecutablePath)
+        '-WorkingDirectory'
+        (ConvertTo-NativeQuotedArgument -Value $Script:RuntimeRoot)
+    ) -join ' '
     $shortcut.WorkingDirectory = $Script:RuntimeRoot
     $shortcut.IconLocation = "$($Script:ExecutablePath),0"
     $shortcut.Description = 'Receive a local iPad AirPlay screen-mirroring session'
@@ -370,6 +417,9 @@ function Start-Receiver {
     if (-not (Test-Path -LiteralPath $Script:ExecutablePath -PathType Leaf)) {
         throw 'The receiver is not installed. Run: ./whiteboard install'
     }
+    if (-not (Test-Path -LiteralPath $Script:LauncherPath -PathType Leaf)) {
+        throw 'The visible PIN launcher is not installed. Run: ./whiteboard install'
+    }
 
     $running = @(Get-ReceiverProcesses)
     if ($running.Count -gt 0) {
@@ -379,11 +429,28 @@ function Start-Receiver {
 
     $configuration = Get-Configuration
     Write-UxPlayConfiguration -Configuration $configuration
+    $launcherArguments = @(
+        '-NoProfile'
+        '-ExecutionPolicy'
+        'Bypass'
+        '-File'
+        (ConvertTo-NativeQuotedArgument -Value $Script:LauncherPath)
+        '-ReceiverExecutable'
+        (ConvertTo-NativeQuotedArgument -Value $Script:ExecutablePath)
+        '-WorkingDirectory'
+        (ConvertTo-NativeQuotedArgument -Value $Script:RuntimeRoot)
+    )
     Start-Process `
-        -FilePath $Script:ExecutablePath `
-        -WorkingDirectory $Script:RuntimeRoot | Out-Null
+        -FilePath $Script:WindowsPowerShellPath `
+        -WindowStyle Hidden `
+        -ArgumentList $launcherArguments | Out-Null
 
-    Start-Sleep -Seconds 2
+    foreach ($attempt in 1..20) {
+        Start-Sleep -Milliseconds 250
+        if (@(Get-ReceiverProcesses).Count -gt 0) {
+            break
+        }
+    }
     if (@(Get-ReceiverProcesses).Count -eq 0) {
         throw 'The receiver exited before it became ready. Run ./whiteboard doctor for details.'
     }
@@ -574,6 +641,7 @@ function Invoke-Main {
         switch ($Command) {
             'install' {
                 Install-Runtime
+                Install-ReceiverLauncher
                 $configuration = Get-Configuration
                 Save-Configuration -Configuration $configuration
                 Write-UxPlayConfiguration -Configuration $configuration

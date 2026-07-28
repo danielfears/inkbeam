@@ -39,12 +39,18 @@ untested.
 1. Ensure the iPad and laptop are on the same trusted Wi-Fi network.
 2. On the iPad, open **Control Centre → Screen Mirroring**.
 3. Select **iPad-Whiteboard**.
-4. Enter the fresh PIN shown by the receiver.
+4. Enter the fresh PIN shown directly on the **iPad Whiteboard** widget.
 5. In Teams or Zoom, share the **AirPlay Video Stream** window.
 
 The stream window remains available between brief disconnects, but clears the
 last frame to avoid accidentally sharing stale content. Use `Alt+Enter` to
 toggle full screen when the D3D11 renderer is active.
+
+UxPlay generates a new PIN only after the iPad requests a connection. The
+pinned Windows tray app renders that PIN as console glyphs rather than exposing
+it through its GUI. A hidden local host decodes those glyphs in memory and
+sends the four digits to the widget through a current-user-only named pipe.
+The PIN is not stored on disk or written to a log.
 
 ## Commands
 
@@ -65,7 +71,7 @@ provides:
 - an **Enable/Disable** button for the receiver;
 - grey **Disabled**, green **Ready to cast**, and blue **Casting now** states;
 - setup, discovery, or network warnings instead of a false ready state; and
-- the current AirPlay name and authentication mode.
+- the current AirPlay name and the active four-digit PIN when requested.
 
 Its recoverable source and installer are tracked in
 `~/git/dotfiles/windows/ipad-whiteboard-widget/`.

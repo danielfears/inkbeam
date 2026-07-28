@@ -33,6 +33,7 @@ function Assert-Matches {
 $parseTargets = @(
     (Join-Path $PSScriptRoot '..\WhiteboardReceiver.ps1'),
     (Join-Path $PSScriptRoot '..\scripts\Configure-WindowsHost.ps1'),
+    (Join-Path $PSScriptRoot '..\scripts\Start-ReceiverHost.ps1'),
     $PSCommandPath
 )
 foreach ($target in $parseTargets) {
@@ -45,6 +46,32 @@ foreach ($target in $parseTargets) {
     )
     Assert-True -Condition ($errors.Count -eq 0) -Message "$(Split-Path -Leaf $target) parses cleanly"
 }
+Assert-True `
+    -Condition ($null -ne (Get-Command Install-ReceiverLauncher -ErrorAction SilentlyContinue)) `
+    -Message 'Receiver launcher installer is available at script scope'
+$encodingTestPath = Join-Path $env:TEMP `
+    "iPadWhiteboardEncoding-$([guid]::NewGuid().ToString('N')).txt"
+try {
+    Write-Utf8NoBomFile -Path $encodingTestPath -Content 'test'
+    $encodingBytes = [IO.File]::ReadAllBytes($encodingTestPath)
+    $hasUtf8Bom = $encodingBytes.Length -ge 3 -and
+        $encodingBytes[0] -eq 0xEF -and
+        $encodingBytes[1] -eq 0xBB -and
+        $encodingBytes[2] -eq 0xBF
+    Assert-True `
+        -Condition (-not $hasUtf8Bom) `
+        -Message 'UxPlay arguments are written without a UTF-8 BOM'
+}
+finally {
+    Remove-Item -LiteralPath $encodingTestPath -Force -ErrorAction SilentlyContinue
+}
+$pinHostSelfTest = @(
+    & (Join-Path $PSScriptRoot '..\scripts\Start-ReceiverHost.ps1') -SelfTest
+) -join "`n"
+Assert-Matches `
+    -Value $pinHostSelfTest `
+    -Pattern 'PIN decoder self-test passed' `
+    -Message 'Receiver host decodes a pinned UxPlay glyph fixture'
 
 $configuration = Get-DefaultConfiguration
 Assert-True -Condition ($configuration.authentication -eq 'every-connection') -Message 'Default authentication requires every-connection approval'
