@@ -630,9 +630,63 @@ $window.Add_KeyDown({
     }
 })
 
+function Set-WidgetPosition {
+    param(
+        [switch]$Force
+    )
+
+    $workArea = [System.Windows.SystemParameters]::WorkArea
+    if (-not $Force) {
+        $centreX = $window.Left + ($window.ActualWidth / 2)
+        $centreY = $window.Top + ($window.ActualHeight / 2)
+        if ($centreX -ge $workArea.Left -and
+            $centreX -lt $workArea.Right -and
+            $centreY -ge $workArea.Top -and
+            $centreY -lt $workArea.Bottom) {
+            return
+        }
+    }
+
+    $window.Left = $workArea.Right - $window.ActualWidth - 18
+    $window.Top = $workArea.Top + 18
+    try {
+        $root = [Windows.Automation.AutomationElement]::RootElement
+        $condition = [Windows.Automation.PropertyCondition]::new(
+            [Windows.Automation.AutomationElement]::NameProperty,
+            "Azure Context"
+        )
+        $azureWidget = $root.FindFirst(
+            [Windows.Automation.TreeScope]::Children,
+            $condition
+        )
+        if ($null -ne $azureWidget) {
+            $azureBounds = $azureWidget.Current.BoundingRectangle
+            $azureCentreX = $azureBounds.Left + ($azureBounds.Width / 2)
+            $azureCentreY = $azureBounds.Top + ($azureBounds.Height / 2)
+            if ($azureCentreX -ge $workArea.Left -and
+                $azureCentreX -lt $workArea.Right -and
+                $azureCentreY -ge $workArea.Top -and
+                $azureCentreY -lt $workArea.Bottom) {
+                $window.Top = $azureBounds.Bottom + 10
+            }
+            else {
+                $window.Top += $azureBounds.Height + 10
+            }
+        }
+    }
+    catch {
+        $window.Top = $workArea.Top + 18
+    }
+    $window.Top = [Math]::Min(
+        $window.Top,
+        $workArea.Bottom - $window.ActualHeight - 18
+    )
+}
+
 $timer = [System.Windows.Threading.DispatcherTimer]::new()
 $timer.Interval = [TimeSpan]::FromSeconds(1)
 $timer.Add_Tick({
+    Set-WidgetPosition
     if (-not $script:actionInProgress) {
         Update-Display
     }
@@ -651,30 +705,7 @@ if (-not $createdNew) {
 
 try {
     $window.Add_Loaded({
-        $workArea = [System.Windows.SystemParameters]::WorkArea
-        $window.Left = $workArea.Right - $window.ActualWidth - 18
-        $window.Top = $workArea.Top + 18
-        try {
-            $root = [Windows.Automation.AutomationElement]::RootElement
-            $condition = [Windows.Automation.PropertyCondition]::new(
-                [Windows.Automation.AutomationElement]::NameProperty,
-                "Azure Context"
-            )
-            $azureWidget = $root.FindFirst(
-                [Windows.Automation.TreeScope]::Children,
-                $condition
-            )
-            if ($null -ne $azureWidget) {
-                $window.Top = $azureWidget.Current.BoundingRectangle.Bottom + 10
-            }
-        }
-        catch {
-            $window.Top = $workArea.Top + 18
-        }
-        $window.Top = [Math]::Min(
-            $window.Top,
-            $workArea.Bottom - $window.ActualHeight - 18
-        )
+        Set-WidgetPosition -Force
         Update-Display
         $timer.Start()
     })
