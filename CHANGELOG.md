@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.2 - 13/10/2026
+
+- Transition to Casting when an authenticated iPad establishes the receiver's
+  live mirror transport, even if UxPlay does not emit a recognised video-log
+  marker.
+- Keep authentication success alone in Pairing until the mirror transport is
+  connected, and return to Ready when that transport is lost.
+
 ## 0.2.1 - 13/10/2026
 
 - Use a counted character array for native console reads; the API does not

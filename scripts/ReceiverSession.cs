@@ -26,6 +26,7 @@ namespace IpadWhiteboard
         private int receiverPid;
         private bool listening;
         private bool observedControl;
+        private bool authenticationAccepted;
         private bool videoStarted;
         private DateTime challengeAt;
 
@@ -58,6 +59,7 @@ namespace IpadWhiteboard
                 if (challenge.Success)
                 {
                     pin = challenge.Groups[1].Value;
+                    authenticationAccepted = false;
                     challengeAt = now;
                     videoStarted = false;
                     Change("Pairing", "Enter this PIN on the iPad.");
@@ -66,6 +68,7 @@ namespace IpadWhiteboard
                     line.Contains("pair-pin-setup success"))
                 {
                     pin = null;
+                    authenticationAccepted = true;
                     Change("Pairing", "PIN accepted. Waiting for the video stream.");
                 }
                 else if (line.Contains("nonce mismatch"))
@@ -75,11 +78,13 @@ namespace IpadWhiteboard
                 else if (line.Contains("Client authentication failure") ||
                     line.Contains("*** authentication failure:"))
                 {
+                    authenticationAccepted = false;
                     Change("Pairing", "The PIN was not accepted. Use the current PIN shown here.");
                 }
                 else if (line.Contains("Too many authentication failures"))
                 {
                     pin = null;
+                    authenticationAccepted = false;
                     Change("Pairing", "Waiting for a fresh PIN from the receiver.");
                 }
                 else if (line.Contains("raop_rtp_mirror h264 SPS+PPS header:") ||
@@ -144,6 +149,12 @@ namespace IpadWhiteboard
                 {
                     Change("Ready", "Choose this receiver in iPad Screen Mirroring.");
                 }
+                if (authenticationAccepted && mirrorConnected)
+                {
+                    videoStarted = true;
+                    pin = null;
+                    Change("Casting", "The iPad video stream is connected.");
+                }
                 if (videoStarted && !mirrorConnected)
                 {
                     ClearConnection();
@@ -171,6 +182,7 @@ namespace IpadWhiteboard
         {
             pin = null;
             videoStarted = false;
+            authenticationAccepted = false;
             observedControl = false;
             challengeAt = default(DateTime);
             Change(listening ? "Ready" : "Starting",
@@ -181,6 +193,7 @@ namespace IpadWhiteboard
         {
             pin = null;
             videoStarted = false;
+            authenticationAccepted = false;
             Change("Error", safeMessage);
         }
 

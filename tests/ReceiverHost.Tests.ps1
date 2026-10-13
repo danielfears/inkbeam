@@ -61,6 +61,17 @@ $session.ProcessLine('Client authentication success', $now.AddSeconds(32))
 Assert-State ($null -eq $session.Snapshot().pin) 'A PIN accepted after a control reconnect is erased immediately.'
 $session.UpdateTransport($true, $false, $false, $now.AddSeconds(33))
 Assert-State ($session.Snapshot().state -eq 'Ready') 'An accepted challenge is not retained across a later disconnect.'
+$session.ProcessLine('*** CLIENT MUST NOW ENTER PIN = "7654" AS AIRPLAY PASSWORD', $now.AddSeconds(34))
+$session.UpdateTransport($true, $true, $false, $now.AddSeconds(34))
+$session.ProcessLine('Client authentication success', $now.AddSeconds(35))
+Assert-State ($session.Snapshot().state -eq 'Pairing') 'Accepted authentication alone still waits for video transport.'
+$session.UpdateTransport($true, $true, $true, $now.AddSeconds(36))
+Assert-State ($session.Snapshot().state -eq 'Casting') 'An authenticated live mirror socket establishes casting without a console marker.'
+$session.UpdateTransport($true, $false, $false, $now.AddSeconds(37))
+Assert-State ($session.Snapshot().state -eq 'Ready') 'Lost mirror transport returns the receiver to readiness.'
+$unauthenticated = [IpadWhiteboard.ReceiverSession]::new()
+$unauthenticated.UpdateTransport($true, $true, $true, $now)
+Assert-State ($unauthenticated.Snapshot().state -ne 'Casting') 'A mirror socket without accepted authentication cannot claim casting.'
 $session.ProcessLine('*** CLIENT MUST NOW ENTER PIN = "2468" AS AIRPLAY PASSWORD', $now)
 $session.UpdateTransport($true, $true, $false, $now)
 $session.UpdateTransport($true, $false, $false, $now.AddMinutes(3))
