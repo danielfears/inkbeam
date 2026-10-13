@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 - 12/10/2026
+## 0.2.0 - 13/10/2026
 
 - Replace the PowerShell desktop widget with a compiled, single-instance
   Windows application with a taskbar window, notification-area controls,
