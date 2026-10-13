@@ -65,8 +65,11 @@ toggle full screen when the D3D11 renderer is active.
 UxPlay generates a new PIN only after the iPad requests a connection. A hidden
 local host consumes each authoritative PIN challenge once and sends only the
 current four digits to the application through a current-user-only named pipe.
-Accepted, replaced, cancelled and expired PINs are cleared immediately. The
-PIN is never stored on disk or written to an InkBeam log.
+Accepted and replaced PINs are cleared immediately. The current PIN remains
+visible across short control-connection gaps while the iPad waits for input;
+an abandoned challenge expires after two minutes without a control connection.
+Cancelling on the iPad may leave the unused PIN visible until that expiry.
+The PIN is never stored on disk or written to an InkBeam log.
 
 ## Commands
 

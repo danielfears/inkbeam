@@ -90,8 +90,12 @@ namespace IpadWhiteboard
                     pin = null;
                     Change("Casting", "The iPad video stream is connected.");
                 }
-                else if (line.Contains("tcp socket was closed by client") ||
-                    line.Contains("raop_rtp_mirror->running is no longer true") ||
+                else if (line.Contains("tcp socket was closed by client"))
+                {
+                    // AirPlay can close its control socket while the PIN dialogue remains open.
+                    if (pin == null) { ClearConnection(); }
+                }
+                else if (line.Contains("raop_rtp_mirror->running is no longer true") ||
                     line.Contains("lost connection with client"))
                 {
                     ClearConnection();
@@ -126,7 +130,8 @@ namespace IpadWhiteboard
             {
                 listening = isListening;
                 if (controlConnected) { observedControl = true; }
-                if (observedControl && !controlConnected && !mirrorConnected)
+                if (observedControl && !controlConnected && !mirrorConnected &&
+                    !(state == "Pairing" && pin != null))
                 {
                     ClearConnection();
                 }

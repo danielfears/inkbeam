@@ -49,8 +49,22 @@ $session.UpdateTransport($true, $false, $false, $now)
 Assert-State ($session.Snapshot().state -eq 'Ready') 'Disconnect returns to readiness without retaining the challenge.'
 $session.ProcessLine('*** CLIENT MUST NOW ENTER PIN = "2468" AS AIRPLAY PASSWORD', $now)
 $session.UpdateTransport($true, $true, $false, $now)
-$session.UpdateTransport($true, $false, $false, $now)
-Assert-State ($null -eq $session.Snapshot().pin) 'Cancelling a pairing attempt clears its PIN.'
+$session.UpdateTransport($true, $false, $false, $now.AddMilliseconds(75))
+Assert-State ($session.Snapshot().pin -ceq '2468') 'A short control-socket gap does not erase the pending PIN.'
+Assert-State ($session.Snapshot().state -eq 'Pairing') 'The iPad PIN dialogue remains a pairing state between control requests.'
+$session.ProcessLine('tcp socket was closed by client', $now.AddSeconds(1))
+Assert-State ($session.Snapshot().pin -ceq '2468') 'A control-socket close event is not mistaken for PIN cancellation.'
+$session.UpdateTransport($true, $false, $false, $now.AddSeconds(30))
+Assert-State ($session.Snapshot().pin -ceq '2468') 'The current PIN remains visible long enough to enter it.'
+$session.UpdateTransport($true, $true, $false, $now.AddSeconds(31))
+$session.ProcessLine('Client authentication success', $now.AddSeconds(32))
+Assert-State ($null -eq $session.Snapshot().pin) 'A PIN accepted after a control reconnect is erased immediately.'
+$session.UpdateTransport($true, $false, $false, $now.AddSeconds(33))
+Assert-State ($session.Snapshot().state -eq 'Ready') 'An accepted challenge is not retained across a later disconnect.'
+$session.ProcessLine('*** CLIENT MUST NOW ENTER PIN = "2468" AS AIRPLAY PASSWORD', $now)
+$session.UpdateTransport($true, $true, $false, $now)
+$session.UpdateTransport($true, $false, $false, $now.AddMinutes(3))
+Assert-State ($null -eq $session.Snapshot().pin -and $session.Snapshot().state -eq 'Ready') 'An abandoned challenge expires even after a previously observed control connection.'
 $session.ProcessLine('*** CLIENT MUST NOW ENTER PIN = "1357" AS AIRPLAY PASSWORD', $now)
 $session.ProcessLine('authentication rejected (nonce mismatch)', $now)
 Assert-State ($session.Snapshot().state -eq 'Error') 'A changed pairing challenge is reported explicitly.'
@@ -81,5 +95,98 @@ Assert-State ($scroll.Count -eq 1 -and $scroll[0] -eq 'challenge B') 'Console sc
 Assert-State (-not $transcript.HistoryLost) 'Overlapping console history is not falsely rejected.'
 $lost = $transcript.ReadNewLines([string[]]@('unrelated new buffer'))
 Assert-State ($transcript.HistoryLost) 'A cleared or overwritten console is detected instead of guessed.'
+
+Add-Type @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+public sealed class InkBeamConsoleFixture : IDisposable
+{
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Coord
+    {
+        public short X, Y;
+        public Coord(short x, short y) { X = x; Y = y; }
+    }
+    private readonly bool allocated;
+    public IntPtr Handle { get; private set; }
+    public InkBeamConsoleFixture()
+    {
+        FreeConsole();
+        if (!AllocConsole()) { throw new Win32Exception(Marshal.GetLastWin32Error()); }
+        allocated = true;
+        ShowWindow(GetConsoleWindow(), 0);
+        try
+        {
+            Handle = CreateConsoleScreenBuffer(0xC0000000, 3, IntPtr.Zero, 1, IntPtr.Zero);
+            if (Handle == new IntPtr(-1)) { throw new Win32Exception(Marshal.GetLastWin32Error()); }
+            if (!SetConsoleScreenBufferSize(Handle, new Coord(512, 64)))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+            WriteRow(0, new String('A', 512));
+            WriteRow(1, "Unicode fixture \u03c0");
+            if (!SetConsoleCursorPosition(Handle, new Coord(0, 2)))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+        }
+        catch { Dispose(); throw; }
+    }
+    private void WriteRow(short row, string text)
+    {
+        uint written;
+        if (!WriteConsoleOutputCharacter(Handle, text, (uint)text.Length,
+            new Coord(0, row), out written) || written != text.Length)
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+    }
+    public void Dispose()
+    {
+        if (Handle != IntPtr.Zero && Handle != new IntPtr(-1))
+        {
+            CloseHandle(Handle);
+            Handle = IntPtr.Zero;
+        }
+        if (allocated) { FreeConsole(); }
+    }
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern bool AllocConsole();
+    [DllImport("kernel32.dll")] private static extern bool FreeConsole();
+    [DllImport("kernel32.dll")] private static extern IntPtr GetConsoleWindow();
+    [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr window, int command);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr CreateConsoleScreenBuffer(uint access, uint share, IntPtr security, uint flags, IntPtr data);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetConsoleScreenBufferSize(IntPtr output, Coord size);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetConsoleCursorPosition(IntPtr output, Coord position);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool WriteConsoleOutputCharacter(IntPtr output, string text, uint count, Coord start, out uint written);
+    [DllImport("kernel32.dll")] private static extern bool CloseHandle(IntPtr handle);
+}
+'@
+$fixture = [InkBeamConsoleFixture]::new()
+$hostReader = [IpadWhiteboard.ReceiverHost]::new('unused', 'unused')
+$flags = [Reflection.BindingFlags]'Instance,NonPublic'
+$handleField = $hostReader.GetType().GetField('consoleOutput', $flags)
+$readRows = $hostReader.GetType().GetMethod('ReadCompletedRows', $flags)
+try {
+    $handleField.SetValue($hostReader, $fixture.Handle)
+    $nativeTranscript = [IpadWhiteboard.ConsoleTranscript]::new()
+    foreach ($iteration in 1..20) {
+        $rows = $readRows.Invoke($hostReader, @())
+        Assert-State ($rows.Count -eq 2 -and $rows[0] -ceq ('A' * 512) -and
+            $rows[1] -ceq ("Unicode fixture " + [char]0x03c0)) "Native console read $iteration preserves counted characters without a terminator."
+        $fresh = $nativeTranscript.ReadNewLines($rows)
+        Assert-State (-not $nativeTranscript.HistoryLost -and
+            $fresh.Count -eq $(if ($iteration -eq 1) { 2 } else { 0 })) "Native console read $iteration does not invent lost history or replay output."
+    }
+}
+finally {
+    $handleField.SetValue($hostReader, [IntPtr]::new(-1))
+    $hostReader.Dispose()
+    $fixture.Dispose()
+}
 
 Write-Output "All $script:checks receiver-state checks passed."

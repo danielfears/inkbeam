@@ -220,14 +220,14 @@ namespace IpadWhiteboard
             int last = information.Cursor.Y;
             for (int row = Math.Max(0, last - 128); row < last; row++)
             {
-                StringBuilder text = new StringBuilder(information.Size.X);
+                char[] text = new char[information.Size.X];
                 uint read;
                 if (!ReadConsoleOutputCharacter(consoleOutput, text,
                     (uint)information.Size.X, new Coord(0, (short)row), out read))
                 {
                     throw new Win32Exception(Marshal.GetLastWin32Error());
                 }
-                rows.Add(text.ToString().TrimEnd());
+                rows.Add(new String(text, 0, checked((int)read)).TrimEnd());
             }
             return rows;
         }
@@ -331,7 +331,7 @@ namespace IpadWhiteboard
         [DllImport("kernel32.dll", SetLastError = true)] private static extern bool SetConsoleScreenBufferSize(IntPtr output, Coord size);
         [DllImport("kernel32.dll", SetLastError = true)] private static extern bool GetConsoleScreenBufferInfo(IntPtr output, out ConsoleInfo info);
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern bool ReadConsoleOutputCharacter(IntPtr output, StringBuilder text, uint count, Coord start, out uint read);
+        private static extern bool ReadConsoleOutputCharacter(IntPtr output, [Out] char[] text, uint count, Coord start, out uint read);
         [DllImport("kernel32.dll")] private static extern bool CloseHandle(IntPtr handle);
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern IntPtr CreateJobObject(IntPtr attributes, string name);

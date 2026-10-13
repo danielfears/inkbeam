@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.1 - 13/10/2026
+
+- Use a counted character array for native console reads; the API does not
+  terminate strings, so string-buffer marshalling could append invalid data,
+  repeatedly flag lost history and discard every new PIN event.
+- Keep the current PIN visible when the iPad closes a short-lived AirPlay
+  control connection while waiting for PIN entry.
+- Preserve immediate clearing on acceptance and replacement, and expire
+  abandoned challenges after two minutes without a control connection.
+- Add regression coverage for control disconnects, reconnection, acceptance
+  and abandoned-challenge expiry.
+
 ## 0.2.0 - 13/10/2026
 
 - Replace the PowerShell desktop widget with a compiled, single-instance
