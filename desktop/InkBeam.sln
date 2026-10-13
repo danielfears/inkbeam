@@ -1,0 +1,31 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InkBeam.Core", "src\InkBeam.Core\InkBeam.Core.csproj", "{4D9628E7-6F85-47A5-A5A4-991A64545474}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InkBeam", "src\InkBeam\InkBeam.csproj", "{710E7A24-A1FE-4095-8496-D6D5A4D8F6B9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InkBeam.SmokeTests", "tests\InkBeam.SmokeTests\InkBeam.SmokeTests.csproj", "{843459BF-E442-4C26-AB6C-062A24F44030}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{4D9628E7-6F85-47A5-A5A4-991A64545474}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4D9628E7-6F85-47A5-A5A4-991A64545474}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4D9628E7-6F85-47A5-A5A4-991A64545474}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4D9628E7-6F85-47A5-A5A4-991A64545474}.Release|Any CPU.Build.0 = Release|Any CPU
+		{710E7A24-A1FE-4095-8496-D6D5A4D8F6B9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{710E7A24-A1FE-4095-8496-D6D5A4D8F6B9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{710E7A24-A1FE-4095-8496-D6D5A4D8F6B9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{710E7A24-A1FE-4095-8496-D6D5A4D8F6B9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{843459BF-E442-4C26-AB6C-062A24F44030}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{843459BF-E442-4C26-AB6C-062A24F44030}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{843459BF-E442-4C26-AB6C-062A24F44030}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{843459BF-E442-4C26-AB6C-062A24F44030}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
+

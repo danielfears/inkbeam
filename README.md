@@ -15,17 +15,17 @@ Bonjour multicast discovery works reliably on the laptop's real network.
 
 ## Install on Windows
 
-1. Download
-   **[InkBeam](https://github.com/danielfears/inkbeam/releases/latest)**
-   from the latest GitHub release.
-2. Extract the ZIP.
-3. Double-click **`Install.cmd`**.
-4. Approve the single administrator prompt used to install local discovery
+1. Download **`InkBeam-Setup-*.exe`** from the
+   **[latest InkBeam release](https://github.com/danielfears/inkbeam/releases/latest)**.
+2. Run the installer.
+3. Approve the single administrator prompt used to install local discovery
    and scoped firewall rules.
 
 No WSL, developer tools, account, or package manager is required. The first
 installation downloads about 115 MB of open-source runtime files from GitHub.
-Windows 10/11 x64 is supported; Windows 11 ARM64 uses built-in x64 emulation.
+The installer carries native Windows 10/11 x64 and ARM64 applications and
+selects the correct one automatically. Portable per-architecture ZIP packages
+remain available for users who prefer them.
 
 The installer:
 
@@ -39,32 +39,34 @@ The installer:
   service and tightly scoped firewall rules;
 - allows the receiver on all Windows network profiles, but only for its fixed
   ports, executable paths, and the directly connected local subnet;
-- creates an **InkBeam Receiver** Start menu shortcut; and
-- installs the desktop widget and starts it automatically at sign-in.
+- installs the compiled **InkBeam** application with its own taskbar and
+  notification-area icon;
+- creates Start menu and standard Windows uninstall entries; and
+- starts InkBeam at sign-in unless that preference has previously been turned
+  off in the application.
 
-Re-running `Install.cmd` upgrades the application in place and preserves the
-receiver identity, settings, and trusted-client register.
-
-To remove it, use **Uninstall InkBeam** from the Start menu or
-double-click `Uninstall.cmd` in the extracted release.
+Re-running the installer upgrades the application in place and preserves the
+receiver identity, settings, startup preference and trusted-client register.
+To remove it, use **Installed apps** in Windows Settings or **Uninstall
+InkBeam** from the Start menu.
 
 ## Use
 
 1. Ensure the iPad and laptop are on the same trusted Wi-Fi network.
 2. On the iPad, open **Control Centre → Screen Mirroring**.
 3. Select **InkBeam**.
-4. Enter the fresh PIN shown directly on the **InkBeam** widget.
+4. Enter the fresh PIN shown directly in the **InkBeam** application.
 5. In Teams or Zoom, share the **AirPlay Video Stream** window.
 
 The stream window remains available between brief disconnects, but clears the
 last frame to avoid accidentally sharing stale content. Use `Alt+Enter` to
 toggle full screen when the D3D11 renderer is active.
 
-UxPlay generates a new PIN only after the iPad requests a connection. The
-pinned Windows tray app renders that PIN as console glyphs rather than exposing
-it through its GUI. A hidden local host decodes those glyphs in memory and
-sends the four digits to the widget through a current-user-only named pipe.
-The PIN is not stored on disk or written to a log.
+UxPlay generates a new PIN only after the iPad requests a connection. A hidden
+local host consumes each authoritative PIN challenge once and sends only the
+current four digits to the application through a current-user-only named pipe.
+Accepted, replaced, cancelled and expired PINs are cleared immediately. The
+PIN is never stored on disk or written to an InkBeam log.
 
 ## Commands
 
@@ -79,18 +81,23 @@ $controller = "$env:LOCALAPPDATA\iPadWhiteboardReceiver\app\WhiteboardReceiver.p
 & $controller doctor
 ```
 
-## Desktop widget
+## Windows application
 
-The **InkBeam** Windows widget is installed on the desktop and starts
-at sign-in. It sits at the top-right, or directly below an existing Azure
-Context widget when one is present. It provides:
+The compiled **InkBeam** application has a normal taskbar window and a
+notification-area menu for showing, enabling, disabling or exiting it. It
+provides:
 
 - an **Enable/Disable** button for the receiver;
-- grey **Disabled**, green **Ready to cast**, and blue **Casting now** states;
-- setup, discovery, or network warnings instead of a false ready state; and
-- the current AirPlay name and the active four-digit PIN when requested.
+- separate **Starting**, **Ready to cast**, **Pairing request**, **Casting
+  now** and error states derived from the receiver host;
+- setup, Bonjour discovery and network warnings instead of a false ready
+  state;
+- the current AirPlay name and active four-digit PIN only while pairing; and
+- settings for authentication, audio, full screen and start at sign-in.
 
-The widget is the primary control and information view; no terminal is needed.
+Closing the window offers to minimise InkBeam to the notification area or stop
+the receiver and exit. A second launch activates the existing application
+instead of starting a duplicate.
 
 Change the visible name or presentation settings:
 
@@ -135,8 +142,8 @@ file is stored at `%APPDATA%\leapbtw\uxplay-windows\arguments.txt`.
 
 On a Public network, the controller's `doctor` command warns that nearby
 devices on the same subnet can reach the receiver. The fresh per-connection
-PIN remains mandatory; disable the receiver from the widget when it is not
-needed.
+PIN remains mandatory; disable the receiver from the application when it is
+not needed.
 
 ## What AirServer is and why this design differs
 
@@ -204,6 +211,17 @@ git clone https://github.com/danielfears/inkbeam.git
 cd inkbeam
 .\install.ps1 -ValidateOnly
 .\tests\WhiteboardReceiver.Tests.ps1
+.\tests\ReceiverHost.Tests.ps1
+dotnet run --project .\desktop\tests\InkBeam.SmokeTests -c Release
+dotnet build .\desktop\InkBeam.sln -c Release
+```
+
+Build native x64 and ARM64 portable packages and the combined per-user
+installer with:
+
+```powershell
+winget install JRSoftware.InnoSetup
+.\scripts\Build-Release.ps1
 ```
 
 WSL users can also use the `./inkbeam` convenience wrapper. Tagged releases

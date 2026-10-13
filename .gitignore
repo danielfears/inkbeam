@@ -2,4 +2,7 @@
 *.log
 dist/
 *.zip
+desktop/**/bin/
+desktop/**/obj/
+desktop/publish/
 

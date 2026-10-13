@@ -3,7 +3,8 @@
 [CmdletBinding()]
 param(
     [switch]$NoLaunch,
-    [switch]$ValidateOnly
+    [switch]$ValidateOnly,
+    [switch]$ManagedInstaller
 )
 
 Set-StrictMode -Version Latest
@@ -31,9 +32,10 @@ $requiredFiles = @(
     'scripts\LaunchPowerShellHidden.vbs',
     'scripts\Remove-WindowsHost.ps1',
     'scripts\Start-ReceiverHost.ps1',
-    'widget\iPadWhiteboardWidget.ps1',
-    'widget\install.ps1'
+    'scripts\ReceiverHost.cs',
+    'scripts\ReceiverSession.cs'
 )
+$desktopRelativePath = 'desktop\InkBeam.exe'
 
 foreach ($relativePath in $requiredFiles) {
     $sourcePath = Join-Path $PSScriptRoot $relativePath
@@ -60,9 +62,15 @@ foreach ($relativePath in $powerShellFiles) {
 }
 
 if ($ValidateOnly) {
-    Write-Output "InkBeam $version package is valid."
+    Write-Output "InkBeam $version source package is valid."
     return
 }
+
+$desktopSource = Join-Path $PSScriptRoot $desktopRelativePath
+if (-not (Test-Path -LiteralPath $desktopSource -PathType Leaf)) {
+    throw "Installation package is incomplete: $desktopRelativePath"
+}
+$requiredFiles += $desktopRelativePath
 
 function Copy-AppFile {
     param([Parameter(Mandatory)][string]$RelativePath)
@@ -89,11 +97,13 @@ foreach ($relativePath in $requiredFiles) {
 $controller = Join-Path $appRoot 'WhiteboardReceiver.ps1'
 $controllerArguments = @(
     '-NoProfile'
+    '-NonInteractive'
     '-ExecutionPolicy'
     'Bypass'
     '-File'
     ('"{0}"' -f $controller)
     'install'
+    '-NoLaunch'
 )
 $controllerProcess = Start-Process `
     -FilePath $windowsPowerShell `
@@ -104,42 +114,68 @@ if ($controllerProcess.ExitCode -ne 0) {
     throw "Receiver installation failed with exit code $($controllerProcess.ExitCode)."
 }
 
-$widgetInstaller = Join-Path $appRoot 'widget\install.ps1'
-& $widgetInstaller -NoLaunch:$NoLaunch
-
-$programs = [Environment]::GetFolderPath('Programs')
-$uninstallShortcut = Join-Path $programs 'Uninstall InkBeam.lnk'
-$shell = New-Object -ComObject WScript.Shell
-$shortcut = $shell.CreateShortcut($uninstallShortcut)
-try {
-    $shortcut.TargetPath = Join-Path $appRoot 'Uninstall.cmd'
-    $shortcut.WorkingDirectory = $appRoot
-    $shortcut.IconLocation = "$env:SystemRoot\System32\control.exe,0"
-    $shortcut.Description = 'Remove InkBeam'
-    $shortcut.Save()
-}
-finally {
-    [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shortcut)
-    [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell)
-}
-
-if ($NoLaunch) {
-    $stopArguments = @(
-        '-NoProfile'
-        '-ExecutionPolicy'
-        'Bypass'
-        '-File'
-        ('"{0}"' -f $controller)
-        'stop'
-    )
-    $stopProcess = Start-Process `
-        -FilePath $windowsPowerShell `
-        -ArgumentList $stopArguments `
-        -PassThru
-    $stopProcess.WaitForExit()
-    if ($stopProcess.ExitCode -ne 0) {
-        throw "Receiver stop failed with exit code $($stopProcess.ExitCode)."
+Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe'" |
+    Where-Object {
+        [string]$_.CommandLine -like '*iPadWhiteboardWidget.ps1*'
+    } |
+    ForEach-Object {
+        Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
     }
+Remove-Item -LiteralPath (Join-Path $env:LOCALAPPDATA 'iPadWhiteboardWidget') `
+    -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath (Join-Path $appRoot 'widget') `
+    -Recurse -Force -ErrorAction SilentlyContinue
+foreach ($shortcutPath in @(
+        (Join-Path ([Environment]::GetFolderPath('Desktop')) 'InkBeam.lnk'),
+        (Join-Path ([Environment]::GetFolderPath('Startup')) 'InkBeam.lnk'),
+        (Join-Path ([Environment]::GetFolderPath('Desktop')) 'iPad Whiteboard.lnk'),
+        (Join-Path ([Environment]::GetFolderPath('Startup')) 'iPad Whiteboard.lnk')
+    )) {
+    Remove-Item -LiteralPath $shortcutPath -Force -ErrorAction SilentlyContinue
+}
+
+$desktopExecutable = Join-Path $appRoot $desktopRelativePath
+$runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+$preferenceKey = 'HKCU:\Software\InkBeam'
+$preferenceConfigured = $null -ne (
+    Get-ItemProperty -Path $preferenceKey `
+        -Name 'StartAtSignInConfigured' -ErrorAction SilentlyContinue
+)
+$runConfigured = $null -ne (
+    Get-ItemProperty -Path $runKey -Name 'InkBeam' `
+        -ErrorAction SilentlyContinue
+)
+if (-not $preferenceConfigured -and -not $runConfigured) {
+    New-Item -Path $runKey -Force | Out-Null
+    New-ItemProperty -Path $runKey -Name 'InkBeam' `
+        -Value ('"{0}" --background' -f $desktopExecutable) `
+        -PropertyType String -Force | Out-Null
+}
+
+if (-not $ManagedInstaller) {
+    $programs = [Environment]::GetFolderPath('Programs')
+    $uninstallShortcut = Join-Path $programs 'Uninstall InkBeam.lnk'
+    $shell = New-Object -ComObject WScript.Shell
+    try {
+        $shortcut = $shell.CreateShortcut($uninstallShortcut)
+        try {
+            $shortcut.TargetPath = Join-Path $appRoot 'Uninstall.cmd'
+            $shortcut.WorkingDirectory = $appRoot
+            $shortcut.IconLocation = "$env:SystemRoot\System32\control.exe,0"
+            $shortcut.Description = 'Remove InkBeam'
+            $shortcut.Save()
+        }
+        finally {
+            [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shortcut)
+        }
+    }
+    finally {
+        [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell)
+    }
+}
+
+if (-not $NoLaunch) {
+    Start-Process -FilePath $desktopExecutable | Out-Null
 }
 
 Write-Host "InkBeam $version is installed." -ForegroundColor Green

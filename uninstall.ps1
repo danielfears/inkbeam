@@ -15,6 +15,20 @@ $manifestPath = Join-Path $dataRoot 'runtime-current.json'
 $windowsPowerShell = Join-Path $env:SystemRoot `
     'System32\WindowsPowerShell\v1.0\powershell.exe'
 $runtime = $null
+$desktopExecutable = Join-Path $dataRoot 'app\desktop\InkBeam.exe'
+$expectedDesktopPath = [IO.Path]::GetFullPath($desktopExecutable)
+Get-Process -Name 'InkBeam' -ErrorAction SilentlyContinue |
+    Where-Object {
+        try {
+            [string]::Equals(
+                [IO.Path]::GetFullPath($_.Path),
+                $expectedDesktopPath,
+                [StringComparison]::OrdinalIgnoreCase
+            )
+        }
+        catch { $false }
+    } |
+    Stop-Process -Force -ErrorAction SilentlyContinue
 
 if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
     $runtime = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
@@ -94,11 +108,16 @@ foreach ($shortcutPath in @(
         (Join-Path $startup 'InkBeam.lnk'),
         (Join-Path $programs 'iPad Whiteboard Receiver.lnk'),
         (Join-Path $programs 'InkBeam Receiver.lnk'),
+        (Join-Path $programs 'InkBeam.lnk'),
         (Join-Path $programs 'Uninstall iPad Whiteboard Receiver.lnk'),
         (Join-Path $programs 'Uninstall InkBeam.lnk')
     )) {
     Remove-Item -LiteralPath $shortcutPath -Force -ErrorAction SilentlyContinue
 }
+
+Remove-ItemProperty `
+    -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' `
+    -Name 'InkBeam' -Force -ErrorAction SilentlyContinue
 
 if ($KeepSettings) {
     foreach ($path in @(
@@ -113,6 +132,8 @@ if ($KeepSettings) {
     }
 }
 else {
+    Remove-Item -LiteralPath 'HKCU:\Software\InkBeam' `
+        -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $widgetRoot -Recurse -Force `
         -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $dataRoot -Recurse -Force `

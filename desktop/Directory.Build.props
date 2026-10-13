@@ -1,0 +1,14 @@
+<Project>
+  <PropertyGroup>
+    <Version Condition="'$(Version)' == ''">0.2.0</Version>
+    <Authors>InkBeam contributors</Authors>
+    <Copyright>Copyright © InkBeam contributors</Copyright>
+    <RepositoryUrl>https://github.com/danielfears/inkbeam</RepositoryUrl>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+    <Deterministic>true</Deterministic>
+    <DebugType Condition="'$(Configuration)' == 'Release'">embedded</DebugType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+</Project>

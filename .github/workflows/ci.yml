@@ -14,13 +14,26 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
       - name: Validate installation package
         shell: powershell
         run: .\install.ps1 -ValidateOnly
       - name: Run PowerShell tests
         shell: powershell
-        run: .\tests\WhiteboardReceiver.Tests.ps1
-      - name: Build release package
+        run: |
+          .\tests\WhiteboardReceiver.Tests.ps1
+          .\tests\ReceiverHost.Tests.ps1
+      - name: Build and test Windows application
+        shell: powershell
+        run: |
+          dotnet build .\desktop\InkBeam.sln -c Release
+          dotnet run --project .\desktop\tests\InkBeam.SmokeTests -c Release
+      - name: Install installer compiler
+        shell: powershell
+        run: choco install innosetup --no-progress -y
+      - name: Build release packages and installer
         shell: powershell
         run: .\scripts\Build-Release.ps1
 

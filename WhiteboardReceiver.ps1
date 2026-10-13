@@ -16,7 +16,9 @@ param(
     [string]$Renderer,
 
     [ValidateSet('on', 'off')]
-    [string]$Fullscreen
+    [string]$Fullscreen,
+
+    [switch]$NoLaunch
 )
 
 Set-StrictMode -Version Latest
@@ -312,13 +314,14 @@ function Install-Runtime {
 }
 
 function Install-ReceiverLauncher {
-    $source = Join-Path $PSScriptRoot 'scripts\Start-ReceiverHost.ps1'
-    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
-        throw "Missing receiver launcher: $source"
-    }
-
     New-Item -ItemType Directory -Path $Script:DataRoot -Force | Out-Null
-    Copy-Item -LiteralPath $source -Destination $Script:LauncherPath -Force
+    foreach ($fileName in @('Start-ReceiverHost.ps1', 'ReceiverHost.cs', 'ReceiverSession.cs')) {
+        $source = Join-Path $PSScriptRoot "scripts\$fileName"
+        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+            throw "Missing receiver host file: $source"
+        }
+        Copy-Item -LiteralPath $source -Destination (Join-Path $Script:DataRoot $fileName) -Force
+    }
     $legacyLauncher = Join-Path $Script:DataRoot 'Start-ReceiverWithConsole.ps1'
     if (Test-Path -LiteralPath $legacyLauncher -PathType Leaf) {
         Remove-Item -LiteralPath $legacyLauncher -Force
@@ -389,30 +392,76 @@ function Test-WindowsHostConfiguration {
 
 function Install-StartMenuShortcut {
     $programs = [Environment]::GetFolderPath('Programs')
-    $shortcutPath = Join-Path $programs 'InkBeam Receiver.lnk'
-    Remove-Item -LiteralPath (
-        Join-Path $programs 'iPad Whiteboard Receiver.lnk'
-    ) -Force -ErrorAction SilentlyContinue
+    $shortcutPath = Join-Path $programs 'InkBeam.lnk'
+    foreach ($name in @('iPad Whiteboard Receiver.lnk', 'InkBeam Receiver.lnk')) {
+        Remove-Item -LiteralPath (Join-Path $programs $name) -Force -ErrorAction SilentlyContinue
+    }
+    $applicationPath = Join-Path $Script:DataRoot 'app\desktop\InkBeam.exe'
+    if (-not (Test-Path -LiteralPath $applicationPath -PathType Leaf)) {
+        throw 'The Windows application is missing. Run the InkBeam installer.'
+    }
     $shell = New-Object -ComObject WScript.Shell
-    $shortcut = $shell.CreateShortcut($shortcutPath)
-    $shortcut.TargetPath = $Script:WindowsPowerShellPath
-    $shortcut.Arguments = @(
-        '-NoProfile'
-        '-WindowStyle'
-        'Hidden'
-        '-ExecutionPolicy'
-        'Bypass'
-        '-File'
-        (ConvertTo-NativeQuotedArgument -Value $Script:LauncherPath)
-        '-ReceiverExecutable'
-        (ConvertTo-NativeQuotedArgument -Value $Script:ExecutablePath)
-        '-WorkingDirectory'
-        (ConvertTo-NativeQuotedArgument -Value $Script:RuntimeRoot)
-    ) -join ' '
-    $shortcut.WorkingDirectory = $Script:RuntimeRoot
-    $shortcut.IconLocation = "$($Script:ExecutablePath),0"
-    $shortcut.Description = 'Receive a local iPad screen-mirroring session with InkBeam'
-    $shortcut.Save()
+    try {
+        $shortcut = $shell.CreateShortcut($shortcutPath)
+        try {
+            $shortcut.TargetPath = $applicationPath
+            $shortcut.WorkingDirectory = Split-Path -Parent $applicationPath
+            $shortcut.IconLocation = "$applicationPath,0"
+            $shortcut.Description = 'Control local iPad screen mirroring with InkBeam'
+            $shortcut.Save()
+        }
+        finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shortcut) }
+    }
+    finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell) }
+}
+
+function Get-ReceiverHostState {
+    $pipe = [IO.Pipes.NamedPipeClientStream]::new(
+        '.', 'InkBeamReceiverState', [IO.Pipes.PipeDirection]::In,
+        [IO.Pipes.PipeOptions]::Asynchronous
+    )
+    $reader = $null
+    try {
+        $pipe.Connect(150)
+        $reader = [IO.StreamReader]::new($pipe)
+        $read = $reader.ReadLineAsync()
+        if (-not $read.Wait(1000)) {
+            throw 'The receiver state pipe did not respond within one second.'
+        }
+        $line = $read.GetAwaiter().GetResult()
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            throw 'The receiver state pipe returned an empty response.'
+        }
+        $state = $line | ConvertFrom-Json
+        if ($state.version -ne 1 -or
+            @('Starting', 'Ready', 'Pairing', 'Casting', 'Error') -notcontains $state.state) {
+            throw 'The receiver state protocol is unsupported.'
+        }
+        return $state
+    }
+    catch [TimeoutException] { return $null }
+    finally {
+        if ($null -ne $reader) { $reader.Dispose() }
+        $pipe.Dispose()
+    }
+}
+
+function Wait-ReceiverHostStopped {
+    $mutex = $null
+    if ([Threading.Mutex]::TryOpenExisting('Local\iPadWhiteboardReceiverHost', [ref]$mutex)) {
+        $acquired = $false
+        try {
+            try { $acquired = $mutex.WaitOne(10000) }
+            catch [Threading.AbandonedMutexException] { $acquired = $true }
+            if (-not $acquired) {
+                throw 'The previous receiver host did not exit within ten seconds.'
+            }
+        }
+        finally {
+            if ($acquired) { $mutex.ReleaseMutex() }
+            $mutex.Dispose()
+        }
+    }
 }
 
 function Get-ReceiverProcesses {
@@ -465,27 +514,43 @@ function Start-Receiver {
         '-WorkingDirectory'
         (ConvertTo-NativeQuotedArgument -Value $Script:RuntimeRoot)
     )
-    Start-Process `
+    $hostProcess = Start-Process `
         -FilePath $Script:WindowsPowerShellPath `
         -WindowStyle Hidden `
-        -ArgumentList $launcherArguments | Out-Null
+        -ArgumentList $launcherArguments -PassThru
 
-    foreach ($attempt in 1..20) {
+    $failureMessage = $null
+    foreach ($attempt in 1..60) {
         Start-Sleep -Milliseconds 250
-        if (@(Get-ReceiverProcesses).Count -gt 0) {
-            break
+        $state = Get-ReceiverHostState
+        $running = @(Get-ReceiverProcesses)
+        if ($null -ne $state -and $running.Count -eq 1 -and
+            $state.receiverPid -eq $running[0].Id) {
+            if ($state.state -eq 'Error') {
+                $failureMessage = [string]$state.message
+                break
+            }
+            if ($state.state -in @('Ready', 'Pairing', 'Casting')) {
+                Write-Host "Ready: choose '$($configuration.receiverName)' from the iPad Screen Mirroring menu."
+                return
+            }
         }
+        if ($hostProcess.HasExited) { break }
     }
-    if (@(Get-ReceiverProcesses).Count -eq 0) {
-        throw 'The receiver exited before it became ready. Run the controller doctor command for details.'
+    foreach ($process in @(Get-ReceiverProcesses)) {
+        Stop-Process -Id $process.Id -ErrorAction Stop
     }
-
-    Write-Host "Ready: choose '$($configuration.receiverName)' from the iPad Screen Mirroring menu."
+    Wait-ReceiverHostStopped
+    if (-not [string]::IsNullOrWhiteSpace($failureMessage)) {
+        throw $failureMessage
+    }
+    throw 'The receiver did not establish a working AirPlay listener and status channel. Run the controller doctor command.'
 }
 
 function Stop-Receiver {
     $running = @(Get-ReceiverProcesses)
     if ($running.Count -eq 0) {
+        Wait-ReceiverHostStopped
         Write-Host 'InkBeam is already stopped.'
         return
     }
@@ -493,8 +558,7 @@ function Stop-Receiver {
     foreach ($process in $running) {
         Stop-Process -Id $process.Id -ErrorAction Stop
     }
-    Start-Sleep -Milliseconds 500
-
+    Wait-ReceiverHostStopped
     if (@(Get-ReceiverProcesses).Count -gt 0) {
         throw 'The receiver did not stop cleanly.'
     }
@@ -603,7 +667,7 @@ function Invoke-Doctor {
         Write-DoctorCheck -Result PASS -Message 'Receiver process is running.'
     }
     else {
-        Write-DoctorCheck -Result WARN -Message 'Receiver process is stopped; enable it in the InkBeam widget.'
+        Write-DoctorCheck -Result WARN -Message 'Receiver process is stopped; enable it in the InkBeam application.'
     }
 
     if ($failures -gt 0) {
@@ -665,6 +729,7 @@ function Invoke-Main {
     try {
         switch ($Command) {
             'install' {
+                Stop-Receiver
                 Install-Runtime
                 Install-ReceiverLauncher
                 $configuration = Get-Configuration
@@ -677,10 +742,7 @@ function Invoke-Main {
                     Install-WindowsHostConfiguration
                 }
                 Install-StartMenuShortcut
-                if (@(Get-ReceiverProcesses).Count -gt 0) {
-                    Stop-Receiver
-                }
-                Start-Receiver
+                if (-not $NoLaunch) { Start-Receiver }
                 Write-Host 'InkBeam installation is complete.'
                 return 0
             }

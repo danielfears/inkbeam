@@ -1,0 +1,340 @@
+<Window
+    x:Class="InkBeam.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="InkBeam"
+    Width="820"
+    Height="680"
+    MinWidth="720"
+    MinHeight="600"
+    Background="{StaticResource WindowBackgroundBrush}"
+    Foreground="{StaticResource TextBrush}"
+    Icon="Assets/InkBeam.ico"
+    WindowStartupLocation="CenterScreen"
+    SourceInitialized="Window_SourceInitialized"
+    Closing="Window_Closing">
+    <Grid Margin="22">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Grid Margin="2,0,2,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Image
+                Width="42"
+                Height="42"
+                Source="Assets/InkBeam.ico" />
+            <StackPanel Grid.Column="1" Margin="12,1,0,0">
+                <TextBlock
+                    FontSize="22"
+                    FontWeight="SemiBold"
+                    Text="InkBeam" />
+                <TextBlock
+                    Style="{StaticResource MutedText}"
+                    FontSize="12"
+                    Text="Local iPad screen mirroring for Windows" />
+            </StackPanel>
+            <Button
+                x:Name="HeaderExitButton"
+                Grid.Column="2"
+                Style="{StaticResource SecondaryButton}"
+                Padding="14,7"
+                Content="Exit"
+                Click="Exit_Click" />
+        </Grid>
+
+        <TabControl Grid.Row="1" Background="{StaticResource WindowBackgroundBrush}">
+            <TabItem Header="Overview">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="2,16,2,8">
+                        <Border
+                            Background="{StaticResource PanelBrush}"
+                            BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="12"
+                            Padding="20">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Ellipse
+                                            x:Name="StatusDot"
+                                            Width="12"
+                                            Height="12"
+                                            Margin="0,4,10,0"
+                                            VerticalAlignment="Top"
+                                            Fill="#64748B" />
+                                        <StackPanel>
+                                            <TextBlock
+                                                x:Name="StatusTitle"
+                                                FontSize="20"
+                                                FontWeight="SemiBold"
+                                                Text="Checking receiver…" />
+                                            <TextBlock
+                                                x:Name="StatusDetail"
+                                                MaxWidth="550"
+                                                Margin="0,5,18,0"
+                                                Style="{StaticResource MutedText}"
+                                                Text="Reading the installed receiver state." />
+                                        </StackPanel>
+                                    </StackPanel>
+                                    <WrapPanel Margin="22,16,0,0">
+                                        <Border
+                                            Margin="0,0,8,0"
+                                            Background="#211A38"
+                                            CornerRadius="6"
+                                            Padding="9,5">
+                                            <TextBlock
+                                                x:Name="ReceiverNameLabel"
+                                                Foreground="{StaticResource AccentBrush}"
+                                                FontFamily="Cascadia Mono, Consolas"
+                                                Text="InkBeam" />
+                                        </Border>
+                                        <Border
+                                            Background="#182231"
+                                            CornerRadius="6"
+                                            Padding="9,5">
+                                            <TextBlock
+                                                x:Name="AuthenticationLabel"
+                                                Foreground="#B8C7E6"
+                                                Text="Fresh PIN for every connection" />
+                                        </Border>
+                                    </WrapPanel>
+                                </StackPanel>
+                                <Button
+                                    x:Name="ToggleReceiverButton"
+                                    Grid.Column="1"
+                                    MinWidth="105"
+                                    VerticalAlignment="Center"
+                                    Content="Checking…"
+                                    IsEnabled="False"
+                                    Click="ToggleReceiver_Click" />
+                            </Grid>
+                        </Border>
+
+                        <Border
+                            x:Name="PinPanel"
+                            Margin="0,12,0,0"
+                            Background="#231A3C"
+                            BorderBrush="#6248A3"
+                            BorderThickness="1"
+                            CornerRadius="12"
+                            Padding="18"
+                            Visibility="Collapsed">
+                            <StackPanel HorizontalAlignment="Center">
+                                <TextBlock
+                                    HorizontalAlignment="Center"
+                                    Foreground="#CBB9FF"
+                                    FontSize="12"
+                                    FontWeight="SemiBold"
+                                    Text="ENTER THIS PIN ON THE IPAD" />
+                                <TextBlock
+                                    x:Name="PinText"
+                                    Margin="0,4,0,0"
+                                    HorizontalAlignment="Center"
+                                    FontFamily="Cascadia Mono, Consolas"
+                                    FontSize="38"
+                                    FontWeight="Bold"
+                                    Text="----" />
+                            </StackPanel>
+                        </Border>
+
+                        <Grid Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border
+                                Background="{StaticResource PanelRaisedBrush}"
+                                BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="10"
+                                Padding="15">
+                                <StackPanel>
+                                    <TextBlock FontWeight="SemiBold" Text="AirPlay discovery" />
+                                    <TextBlock
+                                        x:Name="DiscoveryLabel"
+                                        Margin="0,5,0,0"
+                                        Foreground="#FBBF24"
+                                        Text="Checking…" />
+                                    <TextBlock
+                                        x:Name="DiscoveryDetail"
+                                        Margin="0,3,0,0"
+                                        Style="{StaticResource MutedText}"
+                                        FontSize="11"
+                                        Text="Reading the Bonjour service state." />
+                                </StackPanel>
+                            </Border>
+                            <Border
+                                Grid.Column="2"
+                                Background="{StaticResource PanelRaisedBrush}"
+                                BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="10"
+                                Padding="15">
+                                <StackPanel>
+                                    <TextBlock FontWeight="SemiBold" Text="Local network" />
+                                    <TextBlock
+                                        x:Name="NetworkLabel"
+                                        Margin="0,5,0,0"
+                                        Foreground="#FBBF24"
+                                        Text="Checking…" />
+                                    <TextBlock
+                                        x:Name="NetworkDetail"
+                                        Margin="0,3,0,0"
+                                        Style="{StaticResource MutedText}"
+                                        FontSize="11"
+                                        Text="Reading active Windows network adapters." />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <Border
+                            Margin="0,12,0,0"
+                            Background="{StaticResource PanelBrush}"
+                            BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="10"
+                            Padding="17">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource SectionTitle}" Text="Mirror and share" />
+                                <TextBlock
+                                    Style="{StaticResource MutedText}"
+                                    Text="1. Select Enable, then open Control Centre on the iPad and choose Screen Mirroring." />
+                                <TextBlock
+                                    Margin="0,6,0,0"
+                                    Style="{StaticResource MutedText}"
+                                    Text="2. Choose the AirPlay name shown above and enter the PIN when prompted." />
+                                <TextBlock
+                                    Margin="0,6,0,0"
+                                    Style="{StaticResource MutedText}"
+                                    Text="3. To present it, share the “AirPlay Video Stream” window in Teams, Zoom, or your meeting app." />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Settings">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="4,18,4,8" MaxWidth="650" HorizontalAlignment="Left">
+                        <TextBlock Style="{StaticResource SectionTitle}" Text="Receiver settings" />
+                        <TextBlock Style="{StaticResource MutedText}" Text="AirPlay name" />
+                        <TextBox
+                            x:Name="ReceiverNameTextBox"
+                            Width="360"
+                            Margin="0,5,0,14"
+                            HorizontalAlignment="Left"
+                            MaxLength="64" />
+
+                        <TextBlock Style="{StaticResource MutedText}" Text="Authentication" />
+                        <ComboBox
+                            x:Name="AuthenticationComboBox"
+                            Width="360"
+                            Margin="0,5,0,6"
+                            HorizontalAlignment="Left"
+                            SelectionChanged="Authentication_SelectionChanged">
+                            <ComboBoxItem
+                                Tag="every-connection"
+                                Content="Fresh PIN for every connection (recommended)" />
+                            <ComboBoxItem
+                                Tag="pair-once"
+                                Content="Pair once and remember trusted clients" />
+                            <ComboBoxItem
+                                Tag="open"
+                                Content="Open access — no PIN" />
+                        </ComboBox>
+                        <Border
+                            x:Name="OpenAccessWarning"
+                            Width="540"
+                            Margin="0,3,0,8"
+                            HorizontalAlignment="Left"
+                            Background="#392019"
+                            BorderBrush="#B45309"
+                            BorderThickness="1"
+                            CornerRadius="7"
+                            Padding="10"
+                            Visibility="Collapsed">
+                            <TextBlock
+                                Foreground="#FDBA74"
+                                TextWrapping="Wrap"
+                                Text="Warning: open access allows anyone on the permitted local network to request a connection without a PIN." />
+                        </Border>
+
+                        <CheckBox
+                            x:Name="AudioCheckBox"
+                            Content="Receive iPad audio" />
+                        <CheckBox
+                            x:Name="FullscreenCheckBox"
+                            Content="Open the AirPlay video window full screen" />
+                        <CheckBox
+                            x:Name="StartAtSignInCheckBox"
+                            IsChecked="True"
+                            Content="Start InkBeam in the notification area when I sign in" />
+
+                        <TextBlock
+                            Width="580"
+                            Margin="0,10,0,0"
+                            HorizontalAlignment="Left"
+                            Style="{StaticResource MutedText}"
+                            FontSize="11"
+                            Text="Saving receiver settings uses the installed InkBeam controller and restarts an active receiver when required." />
+
+                        <StackPanel Margin="0,18,0,0" Orientation="Horizontal">
+                            <Button
+                                x:Name="SaveSettingsButton"
+                                Content="Save settings"
+                                Click="SaveSettings_Click" />
+                            <TextBlock
+                                x:Name="SettingsResultText"
+                                Margin="14,0,0,0"
+                                VerticalAlignment="Center"
+                                Style="{StaticResource MutedText}" />
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="About">
+                <StackPanel Margin="4,20,4,8" MaxWidth="620" HorizontalAlignment="Left">
+                    <Image
+                        Width="72"
+                        Height="72"
+                        HorizontalAlignment="Left"
+                        Source="Assets/InkBeam.ico" />
+                    <TextBlock
+                        Margin="0,14,0,0"
+                        FontSize="24"
+                        FontWeight="SemiBold"
+                        Text="InkBeam" />
+                    <TextBlock
+                        x:Name="VersionText"
+                        Margin="0,4,0,0"
+                        Style="{StaticResource MutedText}"
+                        Text="Version" />
+                    <TextBlock
+                        Margin="0,20,0,0"
+                        Style="{StaticResource MutedText}"
+                        Text="A local Windows controller for receiving an iPad AirPlay screen-mirroring stream." />
+                    <TextBlock
+                        Margin="0,14,0,0"
+                        Style="{StaticResource MutedText}"
+                        Text="InkBeam is free software licensed under the GNU General Public License version 3. See LICENSE in the InkBeam distribution." />
+                    <TextBlock
+                        Margin="0,14,0,0"
+                        Style="{StaticResource MutedText}"
+                        Text="The receiver video remains in its own AirPlay Video Stream window; InkBeam does not embed or relay the video." />
+                </StackPanel>
+            </TabItem>
+        </TabControl>
+    </Grid>
+</Window>

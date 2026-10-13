@@ -73,8 +73,8 @@ $pinHostSelfTest = @(
 ) -join "`n"
 Assert-Matches `
     -Value $pinHostSelfTest `
-    -Pattern 'PIN decoder self-test passed' `
-    -Message 'Receiver host decodes a pinned UxPlay glyph fixture'
+    -Pattern 'Receiver state self-test passed' `
+    -Message 'Receiver host consumes authoritative PIN events and clears accepted PINs'
 
 $configuration = Get-DefaultConfiguration
 Assert-True -Condition ($configuration.receiverName -eq 'InkBeam') -Message 'Default AirPlay name uses InkBeam branding'

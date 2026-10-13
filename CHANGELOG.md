@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.0 - 12/10/2026
+
+- Replace the PowerShell desktop widget with a compiled, single-instance
+  Windows application with a taskbar window, notification-area controls,
+  settings and start-at-sign-in support.
+- Add one dual-architecture per-user Windows installer plus portable x64 and
+  ARM64 packages.
+- Read authoritative UxPlay PIN challenge events instead of repeatedly
+  decoding historical console glyphs.
+- Clear accepted, replaced, cancelled and expired PINs immediately, and fail
+  closed if receiver status history is interrupted.
+- Distinguish receiver startup, readiness, pairing and actual video casting;
+  an unauthenticated AirPlay control connection is no longer labelled as a
+  live cast.
+- Bind the receiver process to its hidden host lifecycle and add bounded,
+  current-user-only state and activation channels.
+
 ## 0.1.0 - 28/07/2026
 
 - Add local AirPlay screen mirroring through a checksum-pinned UxPlay runtime.
