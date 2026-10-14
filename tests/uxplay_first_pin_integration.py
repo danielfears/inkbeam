@@ -19,6 +19,7 @@ AUTH_CHALLENGE = re.compile(
     r'Digest realm="([^"]+)",\s*nonce="([^"]+)"',
     re.IGNORECASE,
 )
+TEST_PORT = 7100
 
 
 def read_response(connection):
@@ -135,8 +136,8 @@ def main():
         raise RuntimeError("The UxPlay executable was not found.")
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as port_probe:
-        port_probe.bind(("127.0.0.1", 0))
-        port = port_probe.getsockname()[1]
+        port_probe.bind(("127.0.0.1", TEST_PORT))
+        port = TEST_PORT
 
     runtime_directory = executable.parent
     key_path = runtime_directory / f"inkbeam-auth-test-{uuid.uuid4().hex}.pem"
