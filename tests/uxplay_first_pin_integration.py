@@ -145,7 +145,7 @@ def main():
     connection = None
     try:
         subprocess.run(
-            ["openssl", "genrsa", "-out", str(key_path), "2048"],
+            ["openssl", "genpkey", "-algorithm", "ED25519", "-out", str(key_path)],
             check=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
