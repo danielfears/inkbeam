@@ -153,6 +153,7 @@ jobs:
             [[ -z "$package" || "$package" == \#* ]] && continue
             packages+=("$package")
           done < ucrt_deps.txt
+          packages+=(mingw-w64-ucrt-x86_64-openssl)
 
           attempt=1
           while [ "$attempt" -le 3 ]; do
@@ -183,6 +184,11 @@ jobs:
           where windeployqt
           windeployqt --version
           ./make_release_CI.sh
+
+      - name: Test first PIN after repeated challenges
+        shell: msys2 {0}
+        working-directory: upstream/uxplay-windows/release
+        run: python ../../../tests/uxplay_first_pin_integration.py ./uxplay-windows.exe
 
       - name: Package and verify runtime
         shell: powershell
