@@ -9,6 +9,7 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 90
     steps:
       - name: Check out InkBeam
         uses: actions/checkout@v5
@@ -124,6 +125,12 @@ jobs:
           msystem: UCRT64
           update: false
 
+      - name: Use the canonical MSYS2 package mirror
+        shell: msys2 {0}
+        run: |
+          printf 'Server = https://repo.msys2.org/mingw/$repo/\n' > /etc/pacman.d/mirrorlist.mingw
+          printf 'Server = https://repo.msys2.org/msys/$arch/\n' > /etc/pacman.d/mirrorlist.msys
+
       - name: Cache Python packages
         uses: actions/cache@v5
         with:
@@ -140,7 +147,25 @@ jobs:
         run: |
           export PIP_CACHE_DIR="${PWD}/pip-cache"
           mkdir -p "$PIP_CACHE_DIR"
-          pacman -S --needed --noconfirm - < ucrt_deps.txt
+          packages=()
+          while IFS= read -r package; do
+            package="${package%$'\r'}"
+            [[ -z "$package" || "$package" == \#* ]] && continue
+            packages+=("$package")
+          done < ucrt_deps.txt
+
+          attempt=1
+          while [ "$attempt" -le 3 ]; do
+            if pacman -S --needed --noconfirm "${packages[@]}"; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            echo "MSYS2 package install attempt $attempt failed; retrying in 10 seconds."
+            sleep 10
+            attempt=$((attempt + 1))
+          done
 
           if ! python -c "import winrt.windows.foundation" 2>/dev/null; then
             pip install \
