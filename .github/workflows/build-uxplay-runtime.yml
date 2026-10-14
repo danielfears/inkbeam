@@ -211,6 +211,34 @@ jobs:
           windeployqt --version
           ./make_release_CI.sh
 
+      - name: Start Bonjour for authentication probe
+        id: test-bonjour
+        shell: powershell
+        run: |
+          $runtimeRoot = Join-Path $env:GITHUB_WORKSPACE 'upstream\uxplay-windows\release'
+          $service = Get-Service -Name 'Bonjour Service' -ErrorAction SilentlyContinue
+          $created = $null -eq $service
+          if ($created) {
+            & (Join-Path $runtimeRoot 'mDNSResponder.exe') -install
+            if ($LASTEXITCODE -ne 0) {
+              throw 'Installing the temporary Bonjour service failed.'
+            }
+            $service = Get-Service -Name 'Bonjour Service'
+          }
+
+          if ($service.Status -ne 'Running') {
+            Start-Service -Name 'Bonjour Service'
+            $service = Get-Service -Name 'Bonjour Service'
+            $service.WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
+          }
+
+          $createdValue = $created.ToString().ToLowerInvariant()
+          [IO.File]::AppendAllText(
+            $env:GITHUB_OUTPUT,
+            "created=$createdValue`n",
+            [Text.UTF8Encoding]::new($false)
+          )
+
       - name: Test first PIN after repeated challenges
         shell: msys2 {0}
         working-directory: upstream/uxplay-windows/release
@@ -218,6 +246,24 @@ jobs:
           cp ../build/inkbeam-uxplay-auth-probe.exe .
           trap 'rm -f ./inkbeam-uxplay-auth-probe.exe' EXIT
           python ../../../tests/uxplay_first_pin_integration.py ./inkbeam-uxplay-auth-probe.exe
+
+      - name: Remove temporary Bonjour service
+        if: always() && steps.test-bonjour.outputs.created == 'true'
+        shell: powershell
+        run: |
+          $runtimeRoot = Join-Path $env:GITHUB_WORKSPACE 'upstream\uxplay-windows\release'
+          $service = Get-Service -Name 'Bonjour Service' -ErrorAction SilentlyContinue
+          if ($null -ne $service) {
+            if ($service.Status -ne 'Stopped') {
+              Stop-Service -Name 'Bonjour Service' -Force
+              $service = Get-Service -Name 'Bonjour Service'
+              $service.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
+            }
+            & (Join-Path $runtimeRoot 'mDNSResponder.exe') -remove
+            if ($LASTEXITCODE -ne 0) {
+              throw 'Removing the temporary Bonjour service failed.'
+            }
+          }
 
       - name: Package and verify runtime
         shell: powershell
