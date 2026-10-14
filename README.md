@@ -32,7 +32,9 @@ The installer:
 - validates its own package before changing the machine;
 - copies an updateable application snapshot into
   `%LOCALAPPDATA%\iPadWhiteboardReceiver\app`;
-- downloads the pinned `uxplay-windows` 2.0.0.1736 x64 bundle from GitHub;
+- downloads the checksum-pinned
+  [UxPlay 2.0.0.1736-authfix1 runtime](https://github.com/danielfears/inkbeam/releases/tag/uxplay-2.0.0.1736-authfix1),
+  built from the upstream `uxplay-windows` 2.0.0.1736 source;
 - verifies its published SHA-256 checksum before extracting anything;
 - checks the expected application, codec, and renderer files in the bundle;
 - requests one Windows administrator approval to install the local Bonjour
@@ -194,6 +196,7 @@ Research checked on 28/07/2026:
 - [Unofficial AirPlay screen-mirroring transport](https://github.com/openairplay/airplay-spec/tree/master/src/screen_mirroring)
 - [UxPlay upstream project](https://github.com/FDH2/UxPlay)
 - [uxplay-windows 2.0.0.1736 release](https://github.com/leapbtw/uxplay-windows/releases/tag/2.0.0.1736)
+- [InkBeam patched UxPlay runtime](https://github.com/danielfears/inkbeam/releases/tag/uxplay-2.0.0.1736-authfix1)
 - [Microsoft WSL networking modes](https://learn.microsoft.com/windows/wsl/networking)
 
 ## Limitations

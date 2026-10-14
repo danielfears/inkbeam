@@ -105,9 +105,25 @@ Assert-True -Condition (-not (Test-ReceiverName -Name 'bad%name')) -Message 'Env
 Assert-True -Condition (-not (Test-ReceiverName -Name '-Workshop')) -Message 'Option-like receiver names are rejected'
 
 $metadata = Get-RuntimeMetadata
+Assert-True -Condition ($metadata.Version -eq '2.0.0.1736-authfix1') -Message 'Patched native runtime build is selected'
+Assert-Matches `
+    -Value $metadata.Uri `
+    -Pattern '^https://github\.com/danielfears/inkbeam/releases/download/uxplay-2\.0\.0\.1736-authfix1/InkBeam-UxPlay-v2\.0\.0\.1736-authfix1-x64\.zip$' `
+    -Message 'Patched runtime is downloaded from its immutable release asset'
 Assert-Matches -Value $metadata.Sha256 -Pattern '^[a-f0-9]{64}$' -Message 'Pinned runtime has a SHA-256 checksum'
 Assert-True -Condition ($metadata.Architecture -eq 'x64') -Message 'Tested x64 runtime is selected instead of the untested ARM64 release'
 Assert-True -Condition ((Get-RequiredRuntimeFiles).Count -ge 10) -Message 'Runtime validation covers the application, codecs, and renderer'
+$legacyRuntime = [pscustomobject]@{ version = '2.0.0.1736' }
+$currentRuntime = [pscustomobject]@{
+    version = $metadata.Version
+    sha256 = $metadata.Sha256
+}
+Assert-True `
+    -Condition (-not (Test-RuntimeManifest -Manifest $legacyRuntime)) `
+    -Message 'The previous upstream runtime is replaced by the patched build'
+Assert-True `
+    -Condition (Test-RuntimeManifest -Manifest $currentRuntime) `
+    -Message 'An installed runtime with the pinned build and digest is reused'
 
 if ($script:Failures -gt 0) {
     Write-Host "$($script:Failures) test(s) failed."

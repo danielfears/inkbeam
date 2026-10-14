@@ -26,8 +26,9 @@ $ErrorActionPreference = 'Stop'
 $Script:InvocationParameters = $PSBoundParameters
 
 $Script:RuntimeVersion = '2.0.0.1736'
-$Script:RuntimeUri = 'https://github.com/leapbtw/uxplay-windows/releases/download/2.0.0.1736/uxplay-windows.zip'
-$Script:RuntimeSha256 = '9d3a51c15fc9db857351195e7eb7bbb21700d9ae25d936a54bcf8536b62cca18'
+$Script:RuntimeBuild = '2.0.0.1736-authfix1'
+$Script:RuntimeUri = 'https://github.com/danielfears/inkbeam/releases/download/uxplay-2.0.0.1736-authfix1/InkBeam-UxPlay-v2.0.0.1736-authfix1-x64.zip'
+$Script:RuntimeSha256 = '2a2a12b1ee16f2bff7e3e7154707f357892f5b05243c711cd31c98851065465f'
 $Script:DataRoot = Join-Path $env:LOCALAPPDATA 'iPadWhiteboardReceiver'
 $Script:RuntimeRoot = Join-Path $Script:DataRoot "runtime\$($Script:RuntimeVersion)-x64"
 $Script:ExecutablePath = Join-Path $Script:RuntimeRoot 'uxplay-windows.exe'
@@ -59,11 +60,21 @@ $Script:FirewallRuleNames = @(
 
 function Get-RuntimeMetadata {
     [pscustomobject]@{
-        Version = $Script:RuntimeVersion
+        Version = $Script:RuntimeBuild
         Uri = $Script:RuntimeUri
         Sha256 = $Script:RuntimeSha256
         Architecture = 'x64'
     }
+}
+
+function Test-RuntimeManifest {
+    param([AllowNull()][psobject]$Manifest)
+
+    return $null -ne $Manifest -and
+        $null -ne $Manifest.PSObject.Properties['version'] -and
+        [string]$Manifest.version -eq $Script:RuntimeBuild -and
+        $null -ne $Manifest.PSObject.Properties['sha256'] -and
+        [string]$Manifest.sha256 -eq $Script:RuntimeSha256
 }
 
 function Get-DefaultConfiguration {
@@ -226,7 +237,9 @@ function Assert-RuntimeBundle {
 
 function Write-RuntimeManifest {
     [pscustomobject][ordered]@{
-        version = $Script:RuntimeVersion
+        version = $Script:RuntimeBuild
+        upstreamVersion = $Script:RuntimeVersion
+        sha256 = $Script:RuntimeSha256
         architecture = 'x64'
         executable = $Script:ExecutablePath
         mdnsExecutable = $Script:MdnsExecutablePath
@@ -239,14 +252,26 @@ function Write-RuntimeManifest {
 
 function Install-Runtime {
     if (Test-Path -LiteralPath $Script:ExecutablePath -PathType Leaf) {
-        Assert-RuntimeBundle -Root $Script:RuntimeRoot
-        Write-RuntimeManifest
-        Write-Host "Receiver runtime $($Script:RuntimeVersion) is already installed."
-        return
+        $installedManifest = $null
+        if (Test-Path -LiteralPath $Script:RuntimeManifestPath -PathType Leaf) {
+            try {
+                $installedManifest = Get-Content -LiteralPath $Script:RuntimeManifestPath -Raw |
+                    ConvertFrom-Json -ErrorAction Stop
+            }
+            catch {
+                throw "The receiver runtime manifest is invalid: $($_.Exception.Message)"
+            }
+        }
+        if (Test-RuntimeManifest -Manifest $installedManifest) {
+            Assert-RuntimeBundle -Root $Script:RuntimeRoot
+            Write-RuntimeManifest
+            Write-Host "Receiver runtime $($Script:RuntimeBuild) is already installed."
+            return
+        }
     }
 
     $downloadDirectory = Join-Path $Script:DataRoot 'downloads'
-    $archivePath = Join-Path $downloadDirectory "uxplay-windows-$($Script:RuntimeVersion)-x64.zip"
+    $archivePath = Join-Path $downloadDirectory "uxplay-windows-$($Script:RuntimeBuild)-x64.zip"
     New-Item -ItemType Directory -Path $downloadDirectory -Force | Out-Null
 
     $archiveIsValid = $false
@@ -259,7 +284,7 @@ function Install-Runtime {
     }
 
     if (-not $archiveIsValid) {
-        Write-Host "Downloading verified open-source receiver runtime $($Script:RuntimeVersion)..."
+        Write-Host "Downloading verified open-source receiver runtime $($Script:RuntimeBuild)..."
         $oldProgressPreference = $ProgressPreference
         try {
             $ProgressPreference = 'SilentlyContinue'
@@ -591,7 +616,7 @@ function Invoke-Doctor {
     $failures = 0
 
     if (Test-Path -LiteralPath $Script:ExecutablePath -PathType Leaf) {
-        Write-DoctorCheck -Result PASS -Message "Runtime $($Script:RuntimeVersion) is installed."
+        Write-DoctorCheck -Result PASS -Message "Runtime $($Script:RuntimeBuild) is installed."
         try {
             Assert-RuntimeBundle -Root $Script:RuntimeRoot
             Write-DoctorCheck -Result PASS -Message 'The required codecs, renderer, and application files are present.'

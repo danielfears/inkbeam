@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.3 - 14/10/2026
+
+- Fix UxPlay random-PIN retry accounting so displaying repeated challenges
+  does not consume failed-authentication attempts or rotate the PIN before
+  it is verified.
+- Install the patched, checksum-pinned native runtime while preserving the
+  existing receiver identity and trusted-client register.
+
 ## 0.2.2 - 13/10/2026
 
 - Transition to Casting when an authenticated iPad establishes the receiver's
