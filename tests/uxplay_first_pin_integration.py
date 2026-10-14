@@ -94,6 +94,19 @@ def wait_for_authentication(events, process):
     raise RuntimeError("UxPlay did not finish PIN authentication.")
 
 
+def safe_runtime_output(events):
+    lines = []
+    while True:
+        try:
+            line = events.get_nowait()
+        except queue.Empty:
+            break
+        lines.append(
+            PIN_EVENT.sub('CLIENT MUST NOW ENTER PIN = "[REDACTED]"', line)
+        )
+    return "\n".join(lines[-12:])
+
+
 def digest_authorization(method, uri, realm, nonce, password):
     username = "InkBeamAuthProbe"
     qop = "auth"
@@ -171,13 +184,21 @@ def main():
         deadline = time.monotonic() + 20
         while connection is None and time.monotonic() < deadline:
             if process.poll() is not None:
-                raise RuntimeError("UxPlay exited before opening its RTSP listener.")
+                detail = safe_runtime_output(events)
+                message = "UxPlay exited before opening its RTSP listener."
+                if detail:
+                    message += f"\nUxPlay output:\n{detail}"
+                raise RuntimeError(message)
             try:
                 connection = socket.create_connection(("127.0.0.1", port), timeout=2)
             except OSError:
                 time.sleep(0.25)
         if connection is None:
-            raise RuntimeError("UxPlay did not open its RTSP listener.")
+            detail = safe_runtime_output(events)
+            message = "UxPlay did not open its RTSP listener."
+            if detail:
+                message += f"\nUxPlay output:\n{detail}"
+            raise RuntimeError(message)
         connection.settimeout(8)
 
         uri = f"rtsp://127.0.0.1:{port}/stream"
