@@ -1,0 +1,189 @@
+name: Build patched UxPlay runtime
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Check out InkBeam
+        uses: actions/checkout@v5
+
+      - name: Check out pinned UxPlay for Windows
+        uses: actions/checkout@v5
+        with:
+          repository: leapbtw/uxplay-windows
+          ref: 2.0.0.1736
+          path: upstream/uxplay-windows
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Verify and apply the authentication patch
+        shell: powershell
+        run: |
+          $runtimeRoot = Join-Path $env:GITHUB_WORKSPACE 'upstream\uxplay-windows'
+          $sourceRoot = Join-Path $runtimeRoot 'libuxplay'
+          $expectedCommit = '437f37514257d9cb513ac7fbdee743b4da85852e'
+          $actualCommit = (& git -C $sourceRoot rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actualCommit -ne $expectedCommit) {
+            throw "Unexpected libuxplay revision: $actualCommit"
+          }
+
+          $patch = Join-Path $env:GITHUB_WORKSPACE 'patches\uxplay-random-password-attempt-count.patch'
+          & git -C $sourceRoot apply --check $patch
+          if ($LASTEXITCODE -ne 0) {
+            throw 'The PIN authentication patch does not apply to the pinned source.'
+          }
+          & git -C $sourceRoot apply $patch
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Applying the PIN authentication patch failed.'
+          }
+          & git -C $sourceRoot diff --check
+          if ($LASTEXITCODE -ne 0) {
+            throw 'The patched UxPlay source has whitespace errors.'
+          }
+
+          $handler = Join-Path $sourceRoot 'lib\raop_handlers.h'
+          .\tests\UxPlayAuthenticationPolicy.Tests.ps1 -SourcePath $handler
+
+      - name: Cache Bonjour SDK
+        uses: actions/cache@v5
+        id: mdns-cache
+        with:
+          path: upstream/uxplay-windows/Bonjour SDK
+          key: mdns-${{ runner.os }}-${{ hashFiles('upstream/uxplay-windows/mdnsresponder-patches/2881.patch') }}-v3
+          restore-keys: |
+            mdns-${{ runner.os }}-
+
+      - name: Build Bonjour SDK
+        if: steps.mdns-cache.outputs.cache-hit != 'true'
+        shell: powershell
+        working-directory: upstream/uxplay-windows
+        run: |
+          git clone --branch rel/mDNSResponder-2881 --depth 1 `
+            --single-branch `
+            https://github.com/apple-oss-distributions/mDNSResponder.git `
+            mdns2881
+
+          cd mdns2881
+          Copy-Item ..\mdnsresponder-patches\2881.patch .
+          git apply -v 2881.patch
+
+          & 'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe' `
+            .\mDNSWindows\DLL\dnssd.vcxproj /m /t:Build /p:Configuration=Release /p:Platform=x64
+          if ($LASTEXITCODE -ne 0) { throw 'Building dnssd.dll failed.' }
+
+          & 'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe' `
+            .\mDNSWindows\SystemService\mDNSResponder.vcxproj /m /t:Build /p:Configuration=Release /p:Platform=x64
+          if ($LASTEXITCODE -ne 0) { throw 'Building mDNSResponder.exe failed.' }
+
+          New-Item -ItemType Directory -Force -Path '..\Bonjour SDK\Include' | Out-Null
+          New-Item -ItemType Directory -Force -Path '..\Bonjour SDK\Lib\x64' | Out-Null
+          New-Item -ItemType Directory -Force -Path '..\Bonjour SDK\Bin\x64' | Out-Null
+
+          Copy-Item mDNSWindows\DLL\x64\Release\dnssd.dll '..\Bonjour SDK\Bin\x64\dnssd.dll'
+          Copy-Item mDNSWindows\SystemService\x64\Release\mDNSResponder.exe '..\Bonjour SDK\Bin\x64\mDNSResponder.exe'
+          Copy-Item mDNSShared\dns_sd.h '..\Bonjour SDK\Include\dns_sd.h'
+          Copy-Item mDNSWindows\DLL\x64\Release\dnssd.lib '..\Bonjour SDK\Lib\x64\dnssd.lib'
+
+          cd ..
+          Remove-Item -LiteralPath mdns2881 -Recurse -Force
+
+      - name: Cache MSYS2 packages
+        uses: actions/cache@v5
+        with:
+          path: |
+            C:\msys64\var\cache\pacman\pkg
+            C:\msys64\var\lib\pacman\sync
+          key: msys2-pacman-${{ runner.os }}-${{ hashFiles('upstream/uxplay-windows/ucrt_deps.txt') }}-v2
+          restore-keys: |
+            msys2-pacman-${{ runner.os }}-
+
+      - name: Set up MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+
+      - name: Cache Python packages
+        uses: actions/cache@v5
+        with:
+          path: |
+            ${{ github.workspace }}/upstream/uxplay-windows/pip-cache
+            C:\msys64\ucrt64\lib\python*\site-packages\winrt*
+          key: pip-winrt-${{ runner.os }}-v2
+          restore-keys: |
+            pip-winrt-${{ runner.os }}-
+
+      - name: Install build dependencies
+        shell: msys2 {0}
+        working-directory: upstream/uxplay-windows
+        run: |
+          export PIP_CACHE_DIR="${PWD}/pip-cache"
+          mkdir -p "$PIP_CACHE_DIR"
+          pacman -S --needed --noconfirm - < ucrt_deps.txt
+
+          if ! python -c "import winrt.windows.foundation" 2>/dev/null; then
+            pip install \
+              winrt-Windows.Foundation \
+              winrt-Windows.Foundation.Collections \
+              winrt-Windows.Devices.Bluetooth.Advertisement \
+              winrt-Windows.Storage.Streams \
+              --break-system-packages
+          fi
+
+      - name: Build UxPlay
+        shell: msys2 {0}
+        working-directory: upstream/uxplay-windows
+        run: |
+          where windeployqt
+          windeployqt --version
+          ./make_release_CI.sh
+
+      - name: Package and verify runtime
+        shell: powershell
+        run: |
+          $runtimeRoot = Join-Path $env:GITHUB_WORKSPACE 'upstream\uxplay-windows\release'
+          $artifactRoot = Join-Path $env:GITHUB_WORKSPACE 'artifacts'
+          $archive = Join-Path $artifactRoot 'InkBeam-UxPlay-v2.0.0.1736-authfix1-x64.zip'
+          New-Item -ItemType Directory -Path $artifactRoot -Force | Out-Null
+
+          $requiredFiles = @(
+            'uxplay-windows.exe',
+            'mDNSResponder.exe',
+            'dnssd.dll',
+            'Qt6Core.dll',
+            'Qt6Widgets.dll',
+            'libgstreamer-1.0-0.dll',
+            'platforms\qwindows.dll',
+            'lib\gstreamer-1.0\libgstcoreelements.dll',
+            'lib\gstreamer-1.0\libgstd3d11.dll',
+            'lib\gstreamer-1.0\libgstlibav.dll',
+            'lib\gstreamer-1.0\libgstvideoparsersbad.dll',
+            'lib\gstreamer-1.0\libgstwasapi2.dll'
+          )
+          foreach ($relativePath in $requiredFiles) {
+            if (-not (Test-Path -LiteralPath (Join-Path $runtimeRoot $relativePath) -PathType Leaf)) {
+              throw "The native runtime is missing: $relativePath"
+            }
+          }
+
+          Compress-Archive -Path (Join-Path $runtimeRoot '*') `
+            -DestinationPath $archive -CompressionLevel Optimal
+          $digest = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$digest *$(Split-Path -Leaf $archive)" |
+            Set-Content -LiteralPath "$archive.sha256" -Encoding Ascii
+          "Runtime archive SHA-256: $digest" | Write-Output
+
+      - name: Upload patched runtime artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: inkbeam-uxplay-runtime-2.0.0.1736-authfix1
+          path: |
+            artifacts/InkBeam-UxPlay-v2.0.0.1736-authfix1-x64.zip
+            artifacts/InkBeam-UxPlay-v2.0.0.1736-authfix1-x64.zip.sha256
+          if-no-files-found: error
