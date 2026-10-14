@@ -72,12 +72,27 @@ jobs:
           cd mdns2881
           Copy-Item ..\mdnsresponder-patches\2881.patch .
           git apply -v 2881.patch
+          if ($LASTEXITCODE -ne 0) { throw 'Applying the Bonjour Windows patch failed.' }
 
-          & 'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe' `
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path -LiteralPath $vswhere -PathType Leaf)) {
+            throw "Visual Studio discovery tool was not found: $vswhere"
+          }
+          $visualStudioPath = (& $vswhere -latest -products '*' `
+            -requires Microsoft.Component.MSBuild -property installationPath | Select-Object -First 1)
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($visualStudioPath)) {
+            throw 'Could not locate a Visual Studio installation with MSBuild.'
+          }
+          $msbuild = Join-Path $visualStudioPath 'MSBuild\Current\Bin\MSBuild.exe'
+          if (-not (Test-Path -LiteralPath $msbuild -PathType Leaf)) {
+            throw "MSBuild was not found in the Visual Studio installation: $msbuild"
+          }
+
+          & $msbuild `
             .\mDNSWindows\DLL\dnssd.vcxproj /m /t:Build /p:Configuration=Release /p:Platform=x64
           if ($LASTEXITCODE -ne 0) { throw 'Building dnssd.dll failed.' }
 
-          & 'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe' `
+          & $msbuild `
             .\mDNSWindows\SystemService\mDNSResponder.vcxproj /m /t:Build /p:Configuration=Release /p:Platform=x64
           if ($LASTEXITCODE -ne 0) { throw 'Building mDNSResponder.exe failed.' }
 
