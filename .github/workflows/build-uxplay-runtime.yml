@@ -51,6 +51,32 @@ jobs:
           $handler = Join-Path $sourceRoot 'lib\raop_handlers.h'
           .\tests\UxPlayAuthenticationPolicy.Tests.ps1 -SourcePath $handler
 
+      - name: Add headless entry point for authentication test
+        shell: powershell
+        run: |
+          $runtimeRoot = Join-Path $env:GITHUB_WORKSPACE 'upstream\uxplay-windows'
+          $probeSource = Join-Path $runtimeRoot 'src\inkbeam_auth_probe.cpp'
+          Copy-Item `
+            -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'tests\uxplay_auth_probe.cpp') `
+            -Destination $probeSource
+
+          $cmakePath = Join-Path $runtimeRoot 'CMakeLists.txt'
+          $cmake = [IO.File]::ReadAllText($cmakePath)
+          if ($cmake.Contains('inkbeam-uxplay-auth-probe')) {
+            throw 'The headless authentication test target already exists.'
+          }
+          $cmake += @"
+
+          add_executable(inkbeam-uxplay-auth-probe src/inkbeam_auth_probe.cpp)
+          target_link_libraries(inkbeam-uxplay-auth-probe PRIVATE uxplay)
+          target_include_directories(inkbeam-uxplay-auth-probe PRIVATE `${CMAKE_SOURCE_DIR}/libuxplay)
+          "@
+          [IO.File]::WriteAllText(
+            $cmakePath,
+            $cmake,
+            [Text.UTF8Encoding]::new($false)
+          )
+
       - name: Cache Bonjour SDK
         uses: actions/cache@v5
         id: mdns-cache
@@ -188,7 +214,10 @@ jobs:
       - name: Test first PIN after repeated challenges
         shell: msys2 {0}
         working-directory: upstream/uxplay-windows/release
-        run: python ../../../tests/uxplay_first_pin_integration.py ./uxplay-windows.exe
+        run: |
+          cp ../build/inkbeam-uxplay-auth-probe.exe .
+          trap 'rm -f ./inkbeam-uxplay-auth-probe.exe' EXIT
+          python ../../../tests/uxplay_first_pin_integration.py ./inkbeam-uxplay-auth-probe.exe
 
       - name: Package and verify runtime
         shell: powershell
