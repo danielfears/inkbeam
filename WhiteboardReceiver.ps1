@@ -220,6 +220,182 @@ function Get-RequiredRuntimeFiles {
     return @($Script:RequiredRuntimeFiles)
 }
 
+function Read-FileBytes {
+    param(
+        [Parameter(Mandatory)][System.IO.FileStream]$Stream,
+        [Parameter(Mandatory)][long]$Offset,
+        [Parameter(Mandatory)][int]$Count
+    )
+
+    if ($Offset -lt 0 -or $Offset + $Count -gt $Stream.Length) {
+        throw "'$($Stream.Name)' is not a valid Windows binary."
+    }
+    [void]$Stream.Seek($Offset, [System.IO.SeekOrigin]::Begin)
+    $buffer = New-Object byte[] $Count
+    $total = 0
+    while ($total -lt $Count) {
+        $read = $Stream.Read($buffer, $total, $Count - $total)
+        if ($read -le 0) {
+            throw "'$($Stream.Name)' ended unexpectedly."
+        }
+        $total += $read
+    }
+    return , $buffer
+}
+
+function Get-PeImportedModules {
+    param([Parameter(Mandatory)][string]$Path)
+
+    $stream = [System.IO.File]::Open(
+        $Path,
+        [System.IO.FileMode]::Open,
+        [System.IO.FileAccess]::Read,
+        [System.IO.FileShare]::ReadWrite)
+    try {
+        $dosHeader = Read-FileBytes -Stream $stream -Offset 0 -Count 64
+        if ($dosHeader[0] -ne 0x4D -or $dosHeader[1] -ne 0x5A) {
+            throw "'$Path' is not a Windows binary."
+        }
+        $peOffset = [long][BitConverter]::ToUInt32($dosHeader, 60)
+        $ntHeader = Read-FileBytes -Stream $stream -Offset $peOffset -Count 24
+        if ([BitConverter]::ToUInt32($ntHeader, 0) -ne 0x4550) {
+            throw "'$Path' is not a Windows binary."
+        }
+        $sectionCount = [int][BitConverter]::ToUInt16($ntHeader, 6)
+        $optionalSize = [int][BitConverter]::ToUInt16($ntHeader, 20)
+        $optionalHeader = Read-FileBytes -Stream $stream -Offset ($peOffset + 24) -Count $optionalSize
+
+        $isPe32Plus = [BitConverter]::ToUInt16($optionalHeader, 0) -eq 0x20B
+        $importDirectory = if ($isPe32Plus) { 120 } else { 104 }
+        if ($optionalSize -lt $importDirectory + 8) {
+            return @()
+        }
+        $importRva = [long][BitConverter]::ToUInt32($optionalHeader, $importDirectory)
+        if ($importRva -eq 0) {
+            return @()
+        }
+
+        $sections = Read-FileBytes `
+            -Stream $stream `
+            -Offset ($peOffset + 24 + $optionalSize) `
+            -Count (40 * $sectionCount)
+        $toFileOffset = {
+            param([long]$Rva)
+
+            for ($index = 0; $index -lt $sectionCount; $index++) {
+                $start = $index * 40
+                $virtualSize = [long][BitConverter]::ToUInt32($sections, $start + 8)
+                $virtualAddress = [long][BitConverter]::ToUInt32($sections, $start + 12)
+                $rawSize = [long][BitConverter]::ToUInt32($sections, $start + 16)
+                $rawPointer = [long][BitConverter]::ToUInt32($sections, $start + 20)
+                $extent = [Math]::Max($virtualSize, $rawSize)
+                if ($Rva -ge $virtualAddress -and $Rva -lt $virtualAddress + $extent) {
+                    return $rawPointer + ($Rva - $virtualAddress)
+                }
+            }
+            throw "'$Path' has an import table outside its sections."
+        }
+
+        $modules = New-Object System.Collections.Generic.List[string]
+        $descriptorOffset = & $toFileOffset $importRva
+        for ($index = 0; $index -lt 1024; $index++) {
+            $descriptor = Read-FileBytes `
+                -Stream $stream `
+                -Offset ($descriptorOffset + 20 * $index) `
+                -Count 20
+            $nameRva = [long][BitConverter]::ToUInt32($descriptor, 12)
+            if ($nameRva -eq 0) {
+                break
+            }
+            $nameOffset = & $toFileOffset $nameRva
+            $nameLength = [int][Math]::Min(256, $stream.Length - $nameOffset)
+            $nameBytes = Read-FileBytes -Stream $stream -Offset $nameOffset -Count $nameLength
+            $terminator = [Array]::IndexOf($nameBytes, [byte]0)
+            if ($terminator -lt 0) {
+                $terminator = $nameBytes.Length
+            }
+            $modules.Add([System.Text.Encoding]::ASCII.GetString($nameBytes, 0, $terminator))
+        }
+        return $modules.ToArray()
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
+
+function Get-MissingRuntimeDependencies {
+    param([Parameter(Mandatory)][string]$Root)
+
+    $rootPath = (Resolve-Path -LiteralPath $Root).ProviderPath.TrimEnd('\')
+    $systemDirectories = @(
+        (Join-Path $env:SystemRoot 'System32'),
+        $env:SystemRoot
+    )
+
+    # Windows resolves a plugin's imports from the application directory, so only
+    # top-level libraries are reached through the binaries that import them.
+    $bundled = @{}
+    $pending = New-Object System.Collections.Generic.Queue[string]
+    foreach ($file in @(Get-ChildItem -LiteralPath $rootPath -File)) {
+        if ($file.Extension -eq '.dll') {
+            $bundled[$file.Name.ToLowerInvariant()] = $file.FullName
+        }
+        elseif ($file.Extension -eq '.exe') {
+            $pending.Enqueue($file.FullName)
+        }
+    }
+    foreach ($directory in @(Get-ChildItem -LiteralPath $rootPath -Directory)) {
+        foreach ($file in @(Get-ChildItem -LiteralPath $directory.FullName -File -Recurse)) {
+            if ($file.Extension -in @('.dll', '.exe')) {
+                $pending.Enqueue($file.FullName)
+            }
+        }
+    }
+
+    $scanned = @{}
+    $systemLibraries = @{}
+    $missing = @{}
+    while ($pending.Count -gt 0) {
+        $path = $pending.Dequeue()
+        if ($scanned.ContainsKey($path.ToLowerInvariant())) {
+            continue
+        }
+        $scanned[$path.ToLowerInvariant()] = $true
+        $owner = Split-Path -Leaf $path
+
+        foreach ($module in @(Get-PeImportedModules -Path $path)) {
+            $name = $module.ToLowerInvariant()
+            if ($bundled.ContainsKey($name)) {
+                $pending.Enqueue($bundled[$name])
+                continue
+            }
+            if ($name -like 'api-ms-win-*' -or $name -like 'ext-ms-*') {
+                continue
+            }
+            if (-not $systemLibraries.ContainsKey($name)) {
+                $systemLibraries[$name] = @(
+                    $systemDirectories |
+                        Where-Object { Test-Path -LiteralPath (Join-Path $_ $module) -PathType Leaf }
+                ).Count -gt 0
+            }
+            if ($systemLibraries[$name]) {
+                continue
+            }
+            if (-not $missing.ContainsKey($name)) {
+                $missing[$name] = [pscustomobject]@{
+                    Module = $module
+                    RequiredBy = New-Object System.Collections.Generic.List[string]
+                }
+            }
+            if (-not $missing[$name].RequiredBy.Contains($owner)) {
+                $missing[$name].RequiredBy.Add($owner)
+            }
+        }
+    }
+
+    return @($missing.Values | Sort-Object -Property Module)
+}
+
 function Assert-RuntimeBundle {
     param([Parameter(Mandatory)][string]$Root)
 
@@ -232,6 +408,22 @@ function Assert-RuntimeBundle {
     )
     if ($missing.Count -gt 0) {
         throw "The UxPlay runtime is incomplete. Missing: $($missing -join ', ')."
+    }
+
+    $unresolved = @(Get-MissingRuntimeDependencies -Root $Root)
+    if ($unresolved.Count -gt 0) {
+        $shown = @(
+            $unresolved |
+                Select-Object -First 6 |
+                ForEach-Object { "$($_.Module) (needed by $($_.RequiredBy -join ', '))" }
+        )
+        $remainder = if ($unresolved.Count -gt $shown.Count) {
+            " and $($unresolved.Count - $shown.Count) more"
+        }
+        else {
+            ''
+        }
+        throw "The UxPlay runtime is incomplete. Missing libraries: $($shown -join '; ')$remainder."
     }
 }
 
@@ -263,10 +455,19 @@ function Install-Runtime {
             }
         }
         if (Test-RuntimeManifest -Manifest $installedManifest) {
-            Assert-RuntimeBundle -Root $Script:RuntimeRoot
-            Write-RuntimeManifest
-            Write-Host "Receiver runtime $($Script:RuntimeBuild) is already installed."
-            return
+            $bundleProblem = $null
+            try {
+                Assert-RuntimeBundle -Root $Script:RuntimeRoot
+            }
+            catch {
+                $bundleProblem = $_.Exception.Message
+            }
+            if ($null -eq $bundleProblem) {
+                Write-RuntimeManifest
+                Write-Host "Receiver runtime $($Script:RuntimeBuild) is already installed."
+                return
+            }
+            Write-Warning "Reinstalling the receiver runtime. $bundleProblem"
         }
     }
 
@@ -569,6 +770,12 @@ function Start-Receiver {
     if (-not [string]::IsNullOrWhiteSpace($failureMessage)) {
         throw $failureMessage
     }
+    try {
+        Assert-RuntimeBundle -Root $Script:RuntimeRoot
+    }
+    catch {
+        throw "The receiver could not start. $($_.Exception.Message) Run Install.cmd again to repair it."
+    }
     throw 'The receiver did not establish a working AirPlay listener and status channel. Run the controller doctor command.'
 }
 
@@ -619,7 +826,7 @@ function Invoke-Doctor {
         Write-DoctorCheck -Result PASS -Message "Runtime $($Script:RuntimeBuild) is installed."
         try {
             Assert-RuntimeBundle -Root $Script:RuntimeRoot
-            Write-DoctorCheck -Result PASS -Message 'The required codecs, renderer, and application files are present.'
+            Write-DoctorCheck -Result PASS -Message 'The required codecs, renderer, application files, and their libraries are present.'
         }
         catch {
             $failures++

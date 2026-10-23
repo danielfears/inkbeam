@@ -34,6 +34,7 @@ $parseTargets = @(
     (Join-Path $PSScriptRoot '..\WhiteboardReceiver.ps1'),
     (Join-Path $PSScriptRoot '..\scripts\Configure-WindowsHost.ps1'),
     (Join-Path $PSScriptRoot '..\scripts\Start-ReceiverHost.ps1'),
+    (Join-Path $PSScriptRoot 'ReceiverRuntime.Smoke.ps1'),
     $PSCommandPath
 )
 foreach ($target in $parseTargets) {
@@ -113,6 +114,141 @@ Assert-Matches `
 Assert-Matches -Value $metadata.Sha256 -Pattern '^[a-f0-9]{64}$' -Message 'Pinned runtime has a SHA-256 checksum'
 Assert-True -Condition ($metadata.Architecture -eq 'x64') -Message 'Tested x64 runtime is selected instead of the untested ARM64 release'
 Assert-True -Condition ((Get-RequiredRuntimeFiles).Count -ge 10) -Message 'Runtime validation covers the application, codecs, and renderer'
+
+function New-TestPeFile {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [string[]]$Imports = @(),
+        [switch]$Pe32
+    )
+
+    $optionalSize = if ($Pe32) { 224 } else { 240 }
+    $directoryOffset = if ($Pe32) { 96 } else { 112 }
+    $sectionRva = 0x3000
+    $sectionRaw = 0x400
+    $descriptorBytes = 20 * ($Imports.Count + 1)
+
+    $section = New-Object System.IO.MemoryStream
+    $sectionWriter = New-Object System.IO.BinaryWriter($section)
+    $nameCursor = $descriptorBytes
+    foreach ($module in $Imports) {
+        $sectionWriter.Write([uint32]0)
+        $sectionWriter.Write([uint32]0)
+        $sectionWriter.Write([uint32]0)
+        $sectionWriter.Write([uint32]($sectionRva + $nameCursor))
+        $sectionWriter.Write([uint32]0)
+        $nameCursor += $module.Length + 1
+    }
+    $sectionWriter.Write((New-Object byte[] 20))
+    foreach ($module in $Imports) {
+        $sectionWriter.Write([System.Text.Encoding]::ASCII.GetBytes($module))
+        $sectionWriter.Write([byte]0)
+    }
+    $sectionWriter.Flush()
+    $sectionData = $section.ToArray()
+
+    $dosHeader = New-Object byte[] 64
+    $dosHeader[0] = 0x4D
+    $dosHeader[1] = 0x5A
+    [BitConverter]::GetBytes([uint32]0x80).CopyTo($dosHeader, 60)
+    $optionalHeader = New-Object byte[] $optionalSize
+    [BitConverter]::GetBytes([uint16]$(if ($Pe32) { 0x10B } else { 0x20B })).CopyTo($optionalHeader, 0)
+    [BitConverter]::GetBytes([uint32]$sectionRva).CopyTo($optionalHeader, $directoryOffset + 8)
+    [BitConverter]::GetBytes([uint32]$descriptorBytes).CopyTo($optionalHeader, $directoryOffset + 12)
+    $sectionName = New-Object byte[] 8
+    [System.Text.Encoding]::ASCII.GetBytes('.idata').CopyTo($sectionName, 0)
+
+    $file = New-Object System.IO.MemoryStream
+    $writer = New-Object System.IO.BinaryWriter($file)
+    $writer.Write($dosHeader)
+    $writer.Write((New-Object byte[] 64))
+    $writer.Write([uint32]0x4550)
+    $writer.Write([uint16]$(if ($Pe32) { 0x14C } else { 0x8664 }))
+    $writer.Write([uint16]1)
+    $writer.Write((New-Object byte[] 12))
+    $writer.Write([uint16]$optionalSize)
+    $writer.Write([uint16]0x2022)
+    $writer.Write($optionalHeader)
+    $writer.Write($sectionName)
+    $writer.Write([uint32]$sectionData.Length)
+    $writer.Write([uint32]$sectionRva)
+    $writer.Write([uint32]$sectionData.Length)
+    $writer.Write([uint32]$sectionRaw)
+    $writer.Write((New-Object byte[] 16))
+    $writer.Flush()
+    while ($file.Length -lt $sectionRaw) {
+        $writer.Write([byte]0)
+    }
+    $writer.Write($sectionData)
+    $writer.Flush()
+
+    New-Item -ItemType Directory -Path (Split-Path -Parent $Path) -Force | Out-Null
+    [System.IO.File]::WriteAllBytes($Path, $file.ToArray())
+}
+
+$peRoot = Join-Path ([System.IO.Path]::GetTempPath()) "inkbeam-pe-$([guid]::NewGuid().ToString('N'))"
+try {
+    $sample64 = Join-Path $peRoot 'sample64.dll'
+    $sample32 = Join-Path $peRoot 'sample32.dll'
+    New-TestPeFile -Path $sample64 -Imports @('KERNEL32.dll', 'libexample-1.dll')
+    New-TestPeFile -Path $sample32 -Imports @('USER32.dll') -Pe32
+    $imports64 = @(Get-PeImportedModules -Path $sample64)
+    Assert-True `
+        -Condition ($imports64.Count -eq 2 -and $imports64[0] -ceq 'KERNEL32.dll' -and $imports64[1] -ceq 'libexample-1.dll') `
+        -Message 'A 64-bit binary import table is read in full'
+    $imports32 = @(Get-PeImportedModules -Path $sample32)
+    Assert-True `
+        -Condition ($imports32.Count -eq 1 -and $imports32[0] -ceq 'USER32.dll') `
+        -Message 'A 32-bit binary import table is read in full'
+
+    $notPe = Join-Path $peRoot 'not-a-binary.dll'
+    Set-Content -LiteralPath $notPe -Value ('text' * 40)
+    $rejected = $false
+    try { [void](Get-PeImportedModules -Path $notPe) } catch { $rejected = $true }
+    Assert-True -Condition $rejected -Message 'A file that is not a Windows binary is rejected'
+
+    $kernel32 = @(Get-PeImportedModules -Path (Join-Path $env:SystemRoot 'System32\kernel32.dll'))
+    Assert-True `
+        -Condition ($kernel32 -contains 'ntdll.dll') `
+        -Message 'A real Windows library import table is read'
+
+    $closureRoot = Join-Path $peRoot 'closure'
+    New-TestPeFile -Path (Join-Path $closureRoot 'app.exe') -Imports @('KERNEL32.dll', 'api-ms-win-crt-runtime-l1-1-0.dll', 'liba.dll')
+    New-TestPeFile -Path (Join-Path $closureRoot 'liba.dll') -Imports @('KERNEL32.dll', 'libb.dll')
+    New-TestPeFile -Path (Join-Path $closureRoot 'libc.dll') -Imports @('KERNEL32.dll')
+    New-TestPeFile -Path (Join-Path $closureRoot 'unused.dll') -Imports @('libnothing.dll')
+    New-TestPeFile -Path (Join-Path $closureRoot 'lib\plugins\plugin.dll') -Imports @('KERNEL32.dll', 'LIBC.dll', 'libgone-1.dll')
+    $unresolved = @(Get-MissingRuntimeDependencies -Root $closureRoot)
+    Assert-True -Condition ($unresolved.Count -eq 2) -Message 'Only genuinely unresolved libraries are reported'
+    Assert-True `
+        -Condition ($unresolved[0].Module -ceq 'libb.dll' -and $unresolved[0].RequiredBy -contains 'liba.dll') `
+        -Message 'A library missing from a transitive dependency names its importer'
+    Assert-True `
+        -Condition ($unresolved[1].Module -ceq 'libgone-1.dll' -and $unresolved[1].RequiredBy -contains 'plugin.dll') `
+        -Message 'A plugin import missing from the application directory is reported'
+
+    $bundleRoot = Join-Path $peRoot 'bundle'
+    foreach ($relativePath in (Get-RequiredRuntimeFiles)) {
+        New-TestPeFile -Path (Join-Path $bundleRoot $relativePath) -Imports @('KERNEL32.dll')
+    }
+    $bundleComplete = $true
+    try { Assert-RuntimeBundle -Root $bundleRoot } catch { $bundleComplete = $false }
+    Assert-True -Condition $bundleComplete -Message 'A runtime with every file and library passes validation'
+
+    New-TestPeFile `
+        -Path (Join-Path $bundleRoot 'lib\gstreamer-1.0\libgstlibav.dll') `
+        -Imports @('KERNEL32.dll', 'avcodec-63.dll')
+    $bundleError = $null
+    try { Assert-RuntimeBundle -Root $bundleRoot } catch { $bundleError = $_.Exception.Message }
+    Assert-True `
+        -Condition ($null -ne $bundleError -and $bundleError -match 'avcodec-63\.dll \(needed by libgstlibav\.dll\)') `
+        -Message 'A codec plugin without its codec library fails validation by name'
+}
+finally {
+    if (Test-Path -LiteralPath $peRoot) {
+        Remove-Item -LiteralPath $peRoot -Recurse -Force
+    }
+}
 $legacyRuntime = [pscustomobject]@{ version = '2.0.0.1736' }
 $currentRuntime = [pscustomobject]@{
     version = $metadata.Version

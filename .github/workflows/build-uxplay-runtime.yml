@@ -211,6 +211,39 @@ jobs:
           windeployqt --version
           ./make_release_CI.sh
 
+      - name: Bundle the libraries the runtime imports
+        shell: powershell
+        run: |
+          . .\WhiteboardReceiver.ps1
+
+          $runtimeRoot = Join-Path $env:GITHUB_WORKSPACE 'upstream\uxplay-windows\release'
+          $libraryRoot = 'C:\msys64\ucrt64\bin'
+
+          # Upstream copies a fixed library list that lags the MSYS2 packages and
+          # silently skips entries that no longer exist, so the FFmpeg libraries the
+          # libav plugin imports were missing. Follow the import tables instead.
+          $resolved = $false
+          foreach ($pass in 1..12) {
+            $unresolved = @(Get-MissingRuntimeDependencies -Root $runtimeRoot)
+            if ($unresolved.Count -eq 0) {
+              $resolved = $true
+              break
+            }
+            foreach ($library in $unresolved) {
+              $owners = $library.RequiredBy -join ', '
+              $source = Join-Path $libraryRoot $library.Module
+              if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+                throw "$($library.Module) is needed by $owners but is not in $libraryRoot."
+              }
+              Copy-Item -LiteralPath $source -Destination $runtimeRoot
+              Write-Output "Added $($library.Module), needed by $owners."
+            }
+          }
+          if (-not $resolved) {
+            throw 'The runtime libraries did not settle after 12 passes.'
+          }
+          Assert-RuntimeBundle -Root $runtimeRoot
+
       - name: Start Bonjour for authentication probe
         id: test-bonjour
         shell: powershell
@@ -247,6 +280,40 @@ jobs:
           trap 'rm -f ./inkbeam-uxplay-auth-probe.exe' EXIT
           python ../../../tests/uxplay_first_pin_integration.py ./inkbeam-uxplay-auth-probe.exe
 
+      - name: Package and verify runtime
+        shell: powershell
+        run: |
+          . .\WhiteboardReceiver.ps1
+
+          $runtimeRoot = Join-Path $env:GITHUB_WORKSPACE 'upstream\uxplay-windows\release'
+          $artifactRoot = Join-Path $env:GITHUB_WORKSPACE 'artifacts'
+          $archive = Join-Path $artifactRoot 'InkBeam-UxPlay-v2.0.0.1736-authfix2-x64.zip'
+          New-Item -ItemType Directory -Path $artifactRoot -Force | Out-Null
+
+          Assert-RuntimeBundle -Root $runtimeRoot
+
+          $unexpected = @(
+            Get-ChildItem -LiteralPath $runtimeRoot -Recurse -File |
+              Where-Object {
+                $_.Extension -in @('.pem', '.register') -or
+                $_.Name -like 'inkbeam-uxplay-auth-probe*'
+              }
+          )
+          if ($unexpected.Count -gt 0) {
+            throw "The runtime contains files that must not be distributed: $($unexpected.Name -join ', ')"
+          }
+
+          Compress-Archive -Path (Join-Path $runtimeRoot '*') `
+            -DestinationPath $archive -CompressionLevel Optimal
+          $digest = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$digest *$(Split-Path -Leaf $archive)" |
+            Set-Content -LiteralPath "$archive.sha256" -Encoding Ascii
+          "Runtime archive SHA-256: $digest" | Write-Output
+
+      - name: Start the packaged receiver
+        shell: powershell
+        run: .\tests\ReceiverRuntime.Smoke.ps1 -Archive 'artifacts\InkBeam-UxPlay-v2.0.0.1736-authfix2-x64.zip'
+
       - name: Remove temporary Bonjour service
         if: always() && steps.test-bonjour.outputs.created == 'true'
         shell: powershell
@@ -265,46 +332,11 @@ jobs:
             }
           }
 
-      - name: Package and verify runtime
-        shell: powershell
-        run: |
-          $runtimeRoot = Join-Path $env:GITHUB_WORKSPACE 'upstream\uxplay-windows\release'
-          $artifactRoot = Join-Path $env:GITHUB_WORKSPACE 'artifacts'
-          $archive = Join-Path $artifactRoot 'InkBeam-UxPlay-v2.0.0.1736-authfix1-x64.zip'
-          New-Item -ItemType Directory -Path $artifactRoot -Force | Out-Null
-
-          $requiredFiles = @(
-            'uxplay-windows.exe',
-            'mDNSResponder.exe',
-            'dnssd.dll',
-            'Qt6Core.dll',
-            'Qt6Widgets.dll',
-            'libgstreamer-1.0-0.dll',
-            'platforms\qwindows.dll',
-            'lib\gstreamer-1.0\libgstcoreelements.dll',
-            'lib\gstreamer-1.0\libgstd3d11.dll',
-            'lib\gstreamer-1.0\libgstlibav.dll',
-            'lib\gstreamer-1.0\libgstvideoparsersbad.dll',
-            'lib\gstreamer-1.0\libgstwasapi2.dll'
-          )
-          foreach ($relativePath in $requiredFiles) {
-            if (-not (Test-Path -LiteralPath (Join-Path $runtimeRoot $relativePath) -PathType Leaf)) {
-              throw "The native runtime is missing: $relativePath"
-            }
-          }
-
-          Compress-Archive -Path (Join-Path $runtimeRoot '*') `
-            -DestinationPath $archive -CompressionLevel Optimal
-          $digest = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$digest *$(Split-Path -Leaf $archive)" |
-            Set-Content -LiteralPath "$archive.sha256" -Encoding Ascii
-          "Runtime archive SHA-256: $digest" | Write-Output
-
       - name: Upload patched runtime artifact
         uses: actions/upload-artifact@v5
         with:
-          name: inkbeam-uxplay-runtime-2.0.0.1736-authfix1
+          name: inkbeam-uxplay-runtime-2.0.0.1736-authfix2
           path: |
-            artifacts/InkBeam-UxPlay-v2.0.0.1736-authfix1-x64.zip
-            artifacts/InkBeam-UxPlay-v2.0.0.1736-authfix1-x64.zip.sha256
+            artifacts/InkBeam-UxPlay-v2.0.0.1736-authfix2-x64.zip
+            artifacts/InkBeam-UxPlay-v2.0.0.1736-authfix2-x64.zip.sha256
           if-no-files-found: error
