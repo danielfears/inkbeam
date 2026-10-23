@@ -146,6 +146,7 @@ jobs:
             msys2-pacman-${{ runner.os }}-
 
       - name: Set up MSYS2
+        id: msys2
         uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
@@ -213,18 +214,26 @@ jobs:
 
       - name: Bundle the libraries the runtime imports
         shell: powershell
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
         run: |
           . .\WhiteboardReceiver.ps1
 
           $runtimeRoot = Join-Path $env:GITHUB_WORKSPACE 'upstream\uxplay-windows\release'
-          $libraryRoot = 'C:\msys64\ucrt64\bin'
+          $libraryRoot = Join-Path $env:MSYS2_LOCATION 'ucrt64\bin'
+          if (-not (Test-Path -LiteralPath $libraryRoot -PathType Container)) {
+            throw "The MSYS2 UCRT64 libraries were not found at $libraryRoot."
+          }
+          Write-Output "Taking missing libraries from $libraryRoot."
 
           # Upstream copies a fixed library list that lags the MSYS2 packages and
           # silently skips entries that no longer exist, so the FFmpeg libraries the
           # libav plugin imports were missing. Follow the import tables instead.
+          $notFound = [ordered]@{}
           $resolved = $false
           foreach ($pass in 1..12) {
-            $unresolved = @(Get-MissingRuntimeDependencies -Root $runtimeRoot)
+            $unresolved = @(Get-MissingRuntimeDependencies -Root $runtimeRoot |
+              Where-Object { -not $notFound.Contains($_.Module) })
             if ($unresolved.Count -eq 0) {
               $resolved = $true
               break
@@ -232,17 +241,29 @@ jobs:
             foreach ($library in $unresolved) {
               $owners = $library.RequiredBy -join ', '
               $source = Join-Path $libraryRoot $library.Module
-              if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
-                throw "$($library.Module) is needed by $owners but is not in $libraryRoot."
+              if (Test-Path -LiteralPath $source -PathType Leaf) {
+                Copy-Item -LiteralPath $source -Destination $runtimeRoot
+                Write-Output "Added $($library.Module), needed by $owners."
               }
-              Copy-Item -LiteralPath $source -Destination $runtimeRoot
-              Write-Output "Added $($library.Module), needed by $owners."
+              else {
+                $stem = $library.Module -replace '-?\d+\.dll$', ''
+                $similar = @(Get-ChildItem -LiteralPath $libraryRoot -Filter "$stem*.dll" -ErrorAction SilentlyContinue |
+                  Select-Object -ExpandProperty Name) -join ', '
+                $notFound[$library.Module] = "$($library.Module), needed by $owners (similar: $similar)"
+                Write-Output "Not found: $($notFound[$library.Module])"
+              }
             }
+          }
+          if ($notFound.Count -gt 0) {
+            throw "These libraries are not in ${libraryRoot}:`n$($notFound.Values -join "`n")"
           }
           if (-not $resolved) {
             throw 'The runtime libraries did not settle after 12 passes.'
           }
           Assert-RuntimeBundle -Root $runtimeRoot
+
+          $bytes = (Get-ChildItem -LiteralPath $runtimeRoot -Recurse -File | Measure-Object -Property Length -Sum).Sum
+          Write-Output ('Runtime folder is now {0:N0} MB.' -f ($bytes / 1MB))
 
       - name: Start Bonjour for authentication probe
         id: test-bonjour
