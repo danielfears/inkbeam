@@ -106,10 +106,10 @@ Assert-True -Condition (-not (Test-ReceiverName -Name 'bad%name')) -Message 'Env
 Assert-True -Condition (-not (Test-ReceiverName -Name '-Workshop')) -Message 'Option-like receiver names are rejected'
 
 $metadata = Get-RuntimeMetadata
-Assert-True -Condition ($metadata.Version -eq '2.0.0.1736-authfix1') -Message 'Patched native runtime build is selected'
+Assert-True -Condition ($metadata.Version -eq '2.0.0.1736-authfix2') -Message 'Patched native runtime build is selected'
 Assert-Matches `
     -Value $metadata.Uri `
-    -Pattern '^https://github\.com/danielfears/inkbeam/releases/download/uxplay-2\.0\.0\.1736-authfix1/InkBeam-UxPlay-v2\.0\.0\.1736-authfix1-x64\.zip$' `
+    -Pattern '^https://github\.com/danielfears/inkbeam/releases/download/uxplay-2\.0\.0\.1736-authfix2/InkBeam-UxPlay-v2\.0\.0\.1736-authfix2-x64\.zip$' `
     -Message 'Patched runtime is downloaded from its immutable release asset'
 Assert-Matches -Value $metadata.Sha256 -Pattern '^[a-f0-9]{64}$' -Message 'Pinned runtime has a SHA-256 checksum'
 Assert-True -Condition ($metadata.Architecture -eq 'x64') -Message 'Tested x64 runtime is selected instead of the untested ARM64 release'

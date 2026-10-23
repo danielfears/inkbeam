@@ -14,7 +14,7 @@ It applies the
 [random-PIN attempt-count patch](https://github.com/danielfears/inkbeam/blob/main/patches/uxplay-random-password-attempt-count.patch),
 which increments the retry counter only after failed credential verification.
 The resulting x64 runtime is published as the
-[InkBeam UxPlay 2.0.0.1736-authfix1 prerelease](https://github.com/danielfears/inkbeam/releases/tag/uxplay-2.0.0.1736-authfix1).
+[InkBeam UxPlay 2.0.0.1736-authfix2 prerelease](https://github.com/danielfears/inkbeam/releases/tag/uxplay-2.0.0.1736-authfix2).
 The installer verifies its published SHA-256 digest before use.
 
 `scripts/Start-ReceiverHost.ps1` includes digit-glyph data derived from

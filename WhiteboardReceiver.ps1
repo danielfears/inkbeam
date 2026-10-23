@@ -26,9 +26,9 @@ $ErrorActionPreference = 'Stop'
 $Script:InvocationParameters = $PSBoundParameters
 
 $Script:RuntimeVersion = '2.0.0.1736'
-$Script:RuntimeBuild = '2.0.0.1736-authfix1'
-$Script:RuntimeUri = 'https://github.com/danielfears/inkbeam/releases/download/uxplay-2.0.0.1736-authfix1/InkBeam-UxPlay-v2.0.0.1736-authfix1-x64.zip'
-$Script:RuntimeSha256 = '2a2a12b1ee16f2bff7e3e7154707f357892f5b05243c711cd31c98851065465f'
+$Script:RuntimeBuild = '2.0.0.1736-authfix2'
+$Script:RuntimeUri = 'https://github.com/danielfears/inkbeam/releases/download/uxplay-2.0.0.1736-authfix2/InkBeam-UxPlay-v2.0.0.1736-authfix2-x64.zip'
+$Script:RuntimeSha256 = 'b2e37b7f142b4ddc271b490bbe659fe7706d270f724af7eef9d0e6363c0f49bf'
 $Script:DataRoot = Join-Path $env:LOCALAPPDATA 'iPadWhiteboardReceiver'
 $Script:RuntimeRoot = Join-Path $Script:DataRoot "runtime\$($Script:RuntimeVersion)-x64"
 $Script:ExecutablePath = Join-Path $Script:RuntimeRoot 'uxplay-windows.exe'

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.4 - 23/10/2026
+
+- Fix Enable failing with "The receiver did not establish a working AirPlay
+  listener and status channel". The 0.2.3 runtime omitted the FFmpeg
+  libraries that GStreamer's libav plugin imports, so UxPlay exited as soon
+  as it started.
+- Build the runtime by following each program's imports, so every library it
+  needs is bundled, and fail the build when one cannot be found.
+- Release a runtime only after its packaged receiver has started and reached
+  a ready state.
+- Verify the runtime's libraries when installing, in the doctor and after a
+  failed start. An incomplete runtime is now reinstalled instead of being
+  treated as installed, and the missing libraries are named.
+
 ## 0.2.3 - 14/10/2026
 
 - Fix UxPlay random-PIN retry accounting so displaying repeated challenges

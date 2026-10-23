@@ -22,7 +22,7 @@ Bonjour multicast discovery works reliably on the laptop's real network.
    and scoped firewall rules.
 
 No WSL, developer tools, account, or package manager is required. The first
-installation downloads about 115 MB of open-source runtime files from GitHub.
+installation downloads about 110 MB of open-source runtime files from GitHub.
 The installer carries native Windows 10/11 x64 and ARM64 applications and
 selects the correct one automatically. Portable per-architecture ZIP packages
 remain available for users who prefer them.
@@ -33,7 +33,7 @@ The installer:
 - copies an updateable application snapshot into
   `%LOCALAPPDATA%\iPadWhiteboardReceiver\app`;
 - downloads the checksum-pinned
-  [UxPlay 2.0.0.1736-authfix1 runtime](https://github.com/danielfears/inkbeam/releases/tag/uxplay-2.0.0.1736-authfix1),
+  [UxPlay 2.0.0.1736-authfix2 runtime](https://github.com/danielfears/inkbeam/releases/tag/uxplay-2.0.0.1736-authfix2),
   built from the upstream `uxplay-windows` 2.0.0.1736 source;
 - verifies its published SHA-256 checksum before extracting anything;
 - checks the expected application, codec, and renderer files in the bundle;
@@ -196,7 +196,7 @@ Research checked on 28/07/2026:
 - [Unofficial AirPlay screen-mirroring transport](https://github.com/openairplay/airplay-spec/tree/master/src/screen_mirroring)
 - [UxPlay upstream project](https://github.com/FDH2/UxPlay)
 - [uxplay-windows 2.0.0.1736 release](https://github.com/leapbtw/uxplay-windows/releases/tag/2.0.0.1736)
-- [InkBeam patched UxPlay runtime](https://github.com/danielfears/inkbeam/releases/tag/uxplay-2.0.0.1736-authfix1)
+- [InkBeam patched UxPlay runtime](https://github.com/danielfears/inkbeam/releases/tag/uxplay-2.0.0.1736-authfix2)
 - [Microsoft WSL networking modes](https://learn.microsoft.com/windows/wsl/networking)
 
 ## Limitations
